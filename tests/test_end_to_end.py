@@ -28,6 +28,11 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("--detail", readme)
         self.assertIn("Cursor command blocks", readme)
         self.assertIn("HTML is the default.", readme)
+        self.assertIn(
+            "The list shows the title, workspace, and time in aligned columns.",
+            readme,
+        )
+        self.assertIn("`i` shows the selected chat id.", readme)
         self.assertIn("`--markdown` also writes a Markdown file", readme)
         self.assertNotIn("writes nothing", readme)
 

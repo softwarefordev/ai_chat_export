@@ -5,9 +5,21 @@ from datetime import datetime
 from pathlib import Path
 
 from session_export.__main__ import export_with_picker
-from session_export.catalog import load_catalog
-from session_export.picker import run_picker
+from session_export.catalog import Chat, load_catalog
+from session_export.picker import TIME_WIDTH, render_frame, run_picker
 from tests.support import sample_messages, write_chat
+
+
+def _chat(title: str, workspace: str, chat_id: str, moment: datetime) -> Chat:
+    return Chat(
+        id=chat_id,
+        title=title,
+        cwd=workspace,
+        workspace_name=workspace,
+        updated_at_ms=int(moment.timestamp() * 1000),
+        has_store=True,
+        path=Path("."),
+    )
 
 
 class PickerTests(unittest.TestCase):
@@ -45,10 +57,41 @@ class PickerTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _frames(self, keys, theme="dark"):
+    def _frames(self, keys, theme="dark", width=80):
         frames: list[str] = []
-        result = run_picker(self.chats, theme, keys, str(self.launch), frames.append)
+        result = run_picker(
+            self.chats, theme, keys, str(self.launch), frames.append, width=width
+        )
         return result, frames
+
+    def test_columns_share_workspace_and_time_at_an_explicit_width(self):
+        width = 72
+        short = _chat("Map", "SoggyMapMaker", "short", datetime(2026, 9, 1, 9, 5))
+        long_title = _chat("T" * 80, "SpiralBench", "long", datetime(2026, 8, 15, 16, 42))
+        frame = render_frame([long_title, short], 0, "all", "dark", width=width)
+        lines = frame.splitlines()
+        header, rule, first, second = lines[0], lines[1], lines[2], lines[3]
+        self.assertEqual(rule, "-" * width)
+        self.assertEqual(lines[-3], "-" * width)
+        self.assertEqual(len(header), width)
+        self.assertEqual(header[-TIME_WIDTH:], "Last updated".rjust(TIME_WIDTH))
+        self.assertTrue(first.startswith("> "))
+        self.assertTrue(second.startswith("  "))
+        self.assertFalse(second.startswith(">"))
+        self.assertTrue(first.split("  ", 1)[0].endswith("..."))
+        self.assertEqual(first[-TIME_WIDTH:], long_title.updated_label.rjust(TIME_WIDTH))
+        self.assertEqual(second[-TIME_WIDTH:], short.updated_label.rjust(TIME_WIDTH))
+        self.assertNotEqual(len(long_title.updated_label), len(short.updated_label))
+        workspace_at = first.index("SpiralBench")
+        self.assertEqual(second.index("SoggyMapMaker"), workspace_at)
+        self.assertLess(workspace_at, width - TIME_WIDTH)
+
+        wide_workspace = _chat("Title", "W" * 40, "wide", datetime(2026, 8, 15, 16, 42))
+        wide = render_frame([wide_workspace], 0, "workspace", "dark", width=width)
+        row = wide.splitlines()[2]
+        cell = row[-(TIME_WIDTH + 2 + 24) : -(TIME_WIDTH + 2)]
+        self.assertEqual(cell, ("W" * 21) + "...")
+        self.assertIn("This workspace *", wide.splitlines()[0])
 
     def test_movement_scope_enter_esc_and_backspace(self):
         result, frames = self._frames(["down", "up", "enter"])
@@ -75,6 +118,30 @@ class PickerTests(unittest.TestCase):
         self.assertIsNone(result.chat_id)
         self.assertFalse(result.delete_requested)
         self.assertIn("theme: light", frames[-1])
+
+    def test_id_toggle_follows_selection_and_hides_for_an_empty_list(self):
+        _, frames = self._frames(["esc"])
+        self.assertNotIn("id:", frames[0])
+        self.assertIn("i id", frames[0])
+
+        _, frames = self._frames(["i"])
+        self.assertNotIn("id:", frames[0])
+        self.assertIn("id: here", frames[-1])
+
+        _, frames = self._frames(["i", "i"])
+        self.assertNotIn("id:", frames[-1])
+
+        _, frames = self._frames(["I"])
+        self.assertIn("id: here", frames[-1])
+
+        _, frames = self._frames(["i", "down"])
+        self.assertIn("id: there", frames[-1])
+        self.assertNotIn("id: here", frames[-1])
+
+        frames = []
+        run_picker([], "dark", ["i"], str(self.launch), frames.append, width=80)
+        self.assertNotIn("id:", frames[-1])
+        self.assertIn("i id", frames[-1])
 
     def test_enter_writes_files_and_esc_writes_none(self):
         out = self.root / "out"

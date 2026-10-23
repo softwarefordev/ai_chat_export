@@ -14,7 +14,7 @@ Open the picker for chats under `~/.cursor/chats`:
 python -m session_export
 ```
 
-Up and down move. Left and right switch `All chats` and `This workspace`. Enter writes the files. Esc closes. The footer shows the theme that will be written.
+The list shows the title, workspace, and time in aligned columns. Up and down move. Left and right switch `All chats` and `This workspace`. Enter writes the files. Esc closes. The footer shows the theme that will be written. `i` shows the selected chat id.
 
 Export one chat without the picker:
 
