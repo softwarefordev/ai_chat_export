@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import re
+from datetime import datetime
 
 from session_export.transcript import Block, Transcript
 
@@ -13,6 +14,8 @@ _DARK = {
     "muted": "#a3a3a3",
     "time": "#e0b040",
     "panel": "#222222",
+    "user": "#2c261c",
+    "agent": "#1e2428",
     "mark": "#e0b040",
     "rule": "#3a3a3a",
     "code": "#101010",
@@ -24,6 +27,8 @@ _LIGHT = {
     "muted": "#5e5e5e",
     "time": "#8a5a00",
     "panel": "#ffffff",
+    "user": "#f6efe4",
+    "agent": "#f3f5f7",
     "mark": "#8a5a00",
     "rule": "#d9d4cc",
     "code": "#f0ece4",
@@ -49,7 +54,8 @@ def render_html(
 ) -> str:
     palette = _LIGHT if theme == "light" else _DARK
     css = _stylesheet(palette)
-    sections = "\n".join(_section(block) for block in transcript.blocks)
+    sections = _sections(transcript.blocks)
+    navigator = _navigator(transcript.blocks)
     footer = _footer(transcript.footer)
     return (
         "<!DOCTYPE html>\n"
@@ -60,6 +66,7 @@ def render_html(
         f"<style>\n{css}\n</style>\n"
         "</head>\n"
         "<body>\n"
+        f"{navigator}"
         "<article>\n"
         "<header>\n"
         f"<h1>{html.escape(title)}</h1>\n"
@@ -90,6 +97,8 @@ def _stylesheet(palette: dict[str, str]) -> str:
             f"  --muted: {palette['muted']};",
             f"  --time: {palette['time']};",
             f"  --panel: {palette['panel']};",
+            f"  --user: {palette['user']};",
+            f"  --agent: {palette['agent']};",
             f"  --mark: {palette['mark']};",
             f"  --rule: {palette['rule']};",
             f"  --code: {palette['code']};",
@@ -107,6 +116,19 @@ def _stylesheet(palette: dict[str, str]) -> str:
             ".meta { display: flex; justify-content: space-between; gap: 1rem; color: var(--muted); }",
             ".time { color: var(--time); }",
             "section { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 1rem 1.1rem; margin: 0 0 1rem; }",
+            "section.you { background: var(--user); border-left: 3px solid var(--mark); scroll-margin-top: 5rem; }",
+            "section.you:target { outline: 2px solid var(--mark); }",
+            "section.agent { background: var(--agent); }",
+            "section.system, section.context { background: var(--panel); }",
+            'nav { position: sticky; top: 0; overflow: auto; max-height: 40vh; background: var(--bg); border-bottom: 1px solid var(--rule); padding: 0.8rem 1.2rem; font-family: "Segoe UI", system-ui, sans-serif; }',
+            "nav ol { list-style: none; margin: 0; padding: 0; }",
+            "nav a { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; color: var(--text); text-decoration: none; }",
+            "nav .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
+            "nav .time { font-size: 10px; white-space: nowrap; }",
+            "@media (min-width: 70rem) {",
+            "  body { display: grid; grid-template-columns: 30rem minmax(0, 1fr); align-items: start; }",
+            "  nav { max-height: 100vh; border-bottom: 0; border-right: 1px solid var(--rule); }",
+            "}",
             ".tool { font-family: Consolas, ui-monospace, monospace; color: var(--mark); margin: 0.35rem 0; }",
             "pre { background: var(--code); padding: 0.8rem 1rem; overflow: auto; }",
             "code { font-family: Consolas, ui-monospace, monospace; }",
@@ -116,7 +138,69 @@ def _stylesheet(palette: dict[str, str]) -> str:
     )
 
 
-def _section(block: Block) -> str:
+def _sections(blocks: list[Block]) -> str:
+    rendered: list[str] = []
+    number = 0
+    for block in blocks:
+        anchor = ""
+        if block.kind == "you":
+            number += 1
+            anchor = f"user-{number}"
+        rendered.append(_section(block, anchor))
+    return "\n".join(rendered)
+
+
+def _navigator(blocks: list[Block]) -> str:
+    items: list[str] = []
+    number = 0
+    for block in blocks:
+        if block.kind != "you":
+            continue
+        number += 1
+        stamp = ""
+        if block.timestamp:
+            stamp = f'<span class="time">{html.escape(_compact_nav_time(block.timestamp))}</span>'
+        label = html.escape(_nav_label(block))
+        items.append(
+            f'<li><a href="#user-{number}">{stamp}<span class="label">{label}</span></a></li>'
+        )
+    body = "\n".join(items)
+    return f"<nav>\n<ol>\n{body}\n</ol>\n</nav>\n"
+
+
+def _compact_nav_time(stamp: str) -> str:
+    match = re.fullmatch(
+        r"(?P<month>[A-Za-z]{3}) (?P<day>\d{1,2}), (?P<year>\d{4}) "
+        r"(?P<hour>\d{2}):(?P<minute>\d{2}) (?P<ampm>AM|PM)",
+        stamp,
+    )
+    if match is None:
+        return stamp
+    try:
+        month = datetime.strptime(match.group("month"), "%b").month
+    except ValueError:
+        return stamp
+    hour = int(match.group("hour"))
+    if match.group("ampm") == "PM" and hour != 12:
+        hour += 12
+    if match.group("ampm") == "AM" and hour == 12:
+        hour = 0
+    year = int(match.group("year")) % 100
+    day = int(match.group("day"))
+    minute = int(match.group("minute"))
+    return f"{year:02d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}"
+
+
+def _nav_label(block: Block) -> str:
+    text = block.text.strip()
+    if text:
+        return text.split("\n", 1)[0].strip()
+    if block.images:
+        return "Image"
+    return "User"
+
+
+def _section(block: Block, anchor: str = "") -> str:
     heading = _HEADINGS.get(block.kind, block.kind)
     if block.pieces:
         body = "\n".join(_piece_html(piece) for piece in block.pieces)
@@ -128,8 +212,9 @@ def _section(block: Block) -> str:
         )
         images = "\n".join(_image_html(media, data) for media, data in block.images)
         body = "\n".join(part for part in (prose, detail, captions, images) if part)
+    ident = f' id="{html.escape(anchor)}"' if anchor else ""
     return (
-        f'<section class="{html.escape(block.kind)}">\n'
+        f'<section class="{html.escape(block.kind)}"{ident}>\n'
         f"<h2>{_heading(block, heading)}</h2>\n"
         f"{body}\n"
         "</section>"

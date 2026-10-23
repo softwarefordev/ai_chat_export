@@ -33,6 +33,10 @@ class EndToEndTests(unittest.TestCase):
             readme,
         )
         self.assertIn("`i` shows the selected chat id.", readme)
+        self.assertIn(
+            "The HTML page lists user turns, and each entry jumps to that turn.",
+            readme,
+        )
         self.assertIn("`--markdown` also writes a Markdown file", readme)
         self.assertNotIn("writes nothing", readme)
 

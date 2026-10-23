@@ -140,6 +140,143 @@ class DocumentTests(unittest.TestCase):
         self.assertIn("## User\n", bare_markdown)
         self.assertNotIn("## User ·", bare_markdown)
 
+    def test_user_and_agent_panels_differ_in_both_themes(self):
+        transcript = Transcript(
+            blocks=[
+                Block("you", text="Prompt"),
+                Block("agent", text="Reply"),
+                Block("system", text="Note"),
+            ]
+        )
+        dark = render_html(transcript, theme="dark", **self.meta)
+        light = render_html(transcript, theme="light", **self.meta)
+        self.assertIn("--user: #2c261c;", dark)
+        self.assertIn("--agent: #1e2428;", dark)
+        self.assertIn("--panel: #222222;", dark)
+        self.assertIn("#161616", dark)
+        self.assertNotIn("#f7f7f4", dark)
+        self.assertIn("--user: #f6efe4;", light)
+        self.assertIn("--agent: #f3f5f7;", light)
+        self.assertIn("--panel: #ffffff;", light)
+        self.assertIn("#f7f7f4", light)
+        self.assertNotIn("#161616", light)
+        for page in (dark, light):
+            self.assertIn(
+                "section.you { background: var(--user); border-left: 3px solid var(--mark); scroll-margin-top: 5rem; }",
+                page,
+            )
+            self.assertIn("section.agent { background: var(--agent); }", page)
+            self.assertIn("section.system, section.context { background: var(--panel); }", page)
+            self.assertIn('<section class="you"', page)
+            self.assertIn('<section class="agent">', page)
+            self.assertIn('<section class="system">', page)
+
+    def test_navigator_links_user_turns_and_clips_the_first_line(self):
+        transcript = Transcript(
+            blocks=[
+                Block("you", text="First line\nLater line", timestamp="Oct 23, 2026 11:13 AM"),
+                Block("agent", text="Agent only reply"),
+                Block("context", text="Hidden context"),
+                Block("you", text="Second prompt"),
+                Block("you", text="", images=[("image/png", "BBBB")]),
+                Block("you", text=""),
+            ]
+        )
+        page = render_html(transcript, **self.meta)
+        nav = page.split("<article>", 1)[0]
+        self.assertIn('<a href="#user-1">', nav)
+        self.assertIn('<a href="#user-2">', nav)
+        self.assertIn('<a href="#user-3">', nav)
+        self.assertIn('<a href="#user-4">', nav)
+        self.assertIn('id="user-1"', page)
+        self.assertIn('id="user-4"', page)
+        self.assertIn("26-10-23 11:13", nav)
+        self.assertNotIn("Oct 23, 2026 11:13 AM", nav)
+        self.assertIn(
+            '<h2>User <span class="time">Oct 23, 2026 11:13 AM</span></h2>',
+            page,
+        )
+        self.assertIn('<span class="label">First line</span>', nav)
+        self.assertIn('<span class="label">Second prompt</span>', nav)
+        self.assertIn('<span class="label">Image</span>', nav)
+        self.assertIn('<span class="label">User</span>', nav)
+        self.assertNotIn("Later line", nav)
+        self.assertNotIn("Agent only reply", nav)
+        self.assertNotIn("Hidden context", nav)
+        self.assertNotIn('href="#user-5"', page)
+        self.assertIn("position: sticky", page)
+        self.assertIn("text-overflow: ellipsis", page)
+        self.assertIn("section.you:target { outline: 2px solid var(--mark); }", page)
+        self.assertNotIn("<script", page.lower())
+        self.assertNotIn("http", page.lower())
+
+        empty = render_html(
+            Transcript(blocks=[Block("agent", text="Only reply")]),
+            title="T",
+            workspace="W",
+            timestamp="t",
+        )
+        empty_nav = empty.split("<article>", 1)[0]
+        self.assertIn("<nav>", empty_nav)
+        self.assertNotIn("<li>", empty_nav)
+        self.assertNotIn("Only reply", empty_nav)
+
+    def test_navigator_compacts_parsed_times_and_keeps_headings(self):
+        cases = (
+            ("Oct 23, 2026 01:08 PM", "26-10-23 13:08"),
+            ("Oct 23, 2026 11:13 AM", "26-10-23 11:13"),
+            ("Sep 1, 2026 09:05 AM", "26-09-01 09:05"),
+            ("Oct 23, 2026 12:00 AM", "26-10-23 00:00"),
+            ("Oct 23, 2026 12:00 PM", "26-10-23 12:00"),
+            ("sometime next week", "sometime next week"),
+        )
+        blocks = [
+            Block("you", text=f"Query {index}", timestamp=stamp)
+            for index, (stamp, _compact) in enumerate(cases)
+        ]
+        blocks.append(Block("agent", text="Reply", timestamp="Oct 23, 2026 01:08 PM"))
+        page = render_html(Transcript(blocks=blocks), **self.meta)
+        nav, article = page.split("<article>", 1)
+        for stamp, compact in cases:
+            self.assertIn(f'<span class="time">{compact}</span>', nav)
+            self.assertIn(f'<h2>User <span class="time">{stamp}</span></h2>', article)
+            if stamp != compact:
+                self.assertNotIn(stamp, nav)
+        self.assertIn(
+            '<h2>Agent <span class="time">Oct 23, 2026 01:08 PM</span></h2>',
+            article,
+        )
+
+    def test_navigator_time_uses_a_smaller_font(self):
+        transcript = Transcript(
+            blocks=[
+                Block("you", text="Parsed query", timestamp="Oct 23, 2026 11:13 AM"),
+                Block("you", text="Stored query", timestamp="sometime next week"),
+            ]
+        )
+        page = render_html(transcript, **self.meta)
+        nav = page.split("<article>", 1)[0]
+        self.assertIn("nav .time { font-size: 10px; white-space: nowrap; }", page)
+        self.assertIn("nav a { display: flex; flex-direction: column;", page)
+        self.assertIn('font-family: "Segoe UI", system-ui, sans-serif;', page)
+        self.assertNotIn("0.75rem", page)
+        link = nav.split("<a ", 1)[1]
+        self.assertLess(link.index('<span class="time">'), link.index('<span class="label">'))
+        self.assertIn('<span class="time">26-10-23 11:13</span>', nav)
+        self.assertIn('<span class="time">sometime next week</span>', nav)
+        self.assertIn(
+            'font: 18px/1.5 Georgia, "Iowan Old Style", Palatino, serif;',
+            page,
+        )
+        self.assertNotIn("nav .label { font-size", page)
+
+    def test_navigator_column_is_30rem_from_70rem(self):
+        page = render_html(self.transcript, **self.meta)
+        self.assertIn("@media (min-width: 70rem) {", page)
+        self.assertIn("grid-template-columns: 30rem minmax(0, 1fr);", page)
+        self.assertNotIn("16rem", page)
+        self.assertNotIn("52rem", page)
+
     def test_linked_image_is_embedded(self):
         transcript = Transcript(
             blocks=[Block("you", text="See this", images=[("image/png", "AAAA")])]
