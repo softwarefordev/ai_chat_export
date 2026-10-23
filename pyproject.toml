@@ -1,0 +1,16 @@
+[project]
+name = "session-export"
+version = "0.1.0"
+description = "Export Cursor agent sessions to HTML and Markdown"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+session-export = "session_export.__main__:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["session_export*"]
