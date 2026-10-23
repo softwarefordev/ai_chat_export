@@ -1,4 +1,4 @@
-"""Command line entry for session-export."""
+"""Command line entry for ai-chat-export."""
 
 from __future__ import annotations
 
@@ -7,23 +7,23 @@ import json
 import sys
 from pathlib import Path
 
-from session_export.catalog import Chat, load_catalog
-from session_export.picker import (
+from ai_chat_export.catalog import Chat, load_catalog
+from ai_chat_export.picker import (
     call_with_restore,
     read_key,
     run_picker,
     setup_terminal,
     teardown_terminal,
 )
-from session_export.render_html import render_html
-from session_export.render_md import render_markdown
-from session_export.store import load_conversation
-from session_export.transcript import build_transcript
+from ai_chat_export.render_html import render_html
+from ai_chat_export.render_md import render_markdown
+from ai_chat_export.store import load_conversation
+from ai_chat_export.transcript import build_transcript
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="session-export",
+        prog="ai-chat-export",
         description="Export a Cursor agent session to HTML. Pass --markdown to also write Markdown.",
     )
     parser.add_argument("--id", dest="chat_id", help="Chat id to export. Omit to open the picker.")

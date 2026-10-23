@@ -6,25 +6,32 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from session_export.__main__ import main
+from ai_chat_export.__main__ import main
 from tests.support import sample_messages, write_chat
 
 
 class EndToEndTests(unittest.TestCase):
     def test_help_exits_zero(self):
         completed = subprocess.run(
-            [sys.executable, "-m", "session_export", "--help"],
+            [sys.executable, "-m", "ai_chat_export", "--help"],
             cwd=Path(__file__).resolve().parents[1],
             check=False,
             capture_output=True,
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("usage: ai-chat-export", completed.stdout)
+        project = Path(__file__).resolve().parents[1].joinpath("pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('name = "ai-chat-export"', project)
+        self.assertIn('ai-chat-export = "ai_chat_export.__main__:main"', project)
         self.assertIn("--theme", completed.stdout)
         self.assertIn("--tools", completed.stdout)
         self.assertIn("--detail", completed.stdout)
         self.assertIn("--markdown", completed.stdout)
         readme = Path(__file__).resolve().parents[1].joinpath("README.md").read_text(encoding="utf-8")
+        self.assertTrue(readme.startswith("# ai-chat-export\n"))
+        self.assertIn("ai-chat-export", readme)
+        self.assertIn("python -m ai_chat_export", readme)
         self.assertIn("--detail", readme)
         self.assertIn("Cursor command blocks", readme)
         self.assertIn("HTML is the default.", readme)

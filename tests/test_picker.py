@@ -4,9 +4,9 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from session_export.__main__ import export_with_picker
-from session_export.catalog import Chat, load_catalog
-from session_export.picker import TIME_WIDTH, render_frame, run_picker
+from ai_chat_export.__main__ import export_with_picker
+from ai_chat_export.catalog import Chat, load_catalog
+from ai_chat_export.picker import TIME_WIDTH, render_frame, run_picker
 from tests.support import sample_messages, write_chat
 
 

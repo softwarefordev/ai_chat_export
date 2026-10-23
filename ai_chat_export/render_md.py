@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from session_export.transcript import Block, Transcript
+from ai_chat_export.transcript import Block, Transcript
 
 _HEADINGS = {
     "you": "User",

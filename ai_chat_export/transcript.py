@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from session_export.catalog import format_datetime
+from ai_chat_export.catalog import format_datetime
 
 
 @dataclass

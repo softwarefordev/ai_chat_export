@@ -6,7 +6,7 @@ import html
 import re
 from datetime import datetime
 
-from session_export.transcript import Block, Transcript
+from ai_chat_export.transcript import Block, Transcript
 
 _DARK = {
     "bg": "#161616",

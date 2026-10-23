@@ -7,7 +7,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 
-from session_export.catalog import Chat, filter_workspace
+from ai_chat_export.catalog import Chat, filter_workspace
 
 TIME_WIDTH = 21
 WORKSPACE_CAP = 24

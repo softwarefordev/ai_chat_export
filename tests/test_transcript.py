@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from session_export.store import load_conversation
-from session_export.transcript import build_transcript, caption
+from ai_chat_export.store import load_conversation
+from ai_chat_export.transcript import build_transcript, caption
 from tests.support import PNG, sample_messages, write_db, write_protobuf_db
 
 

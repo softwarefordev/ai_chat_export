@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from session_export.catalog import filter_workspace, format_datetime, load_catalog
+from ai_chat_export.catalog import filter_workspace, format_datetime, load_catalog
 from tests.support import write_chat
 
 

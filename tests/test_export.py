@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from session_export.__main__ import export_session, main, safe_stem
-from session_export.catalog import format_timestamp
+from ai_chat_export.__main__ import export_session, main, safe_stem
+from ai_chat_export.catalog import format_timestamp
 from tests.support import sample_messages, write_chat
 
 

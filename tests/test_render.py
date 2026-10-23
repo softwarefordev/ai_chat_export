@@ -1,8 +1,8 @@
 import unittest
 
-from session_export.render_html import render_assistant, render_html
-from session_export.render_md import render_markdown
-from session_export.transcript import Block, Transcript, build_transcript
+from ai_chat_export.render_html import render_assistant, render_html
+from ai_chat_export.render_md import render_markdown
+from ai_chat_export.transcript import Block, Transcript, build_transcript
 from tests.support import sample_messages
 
 
