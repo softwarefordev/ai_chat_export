@@ -256,8 +256,11 @@ class DocumentTests(unittest.TestCase):
         )
         page = render_html(transcript, **self.meta)
         nav = page.split("<article>", 1)[0]
-        self.assertIn("nav .time { font-size: 10px; white-space: nowrap; }", page)
-        self.assertIn("nav a { display: flex; flex-direction: column;", page)
+        self.assertIn(
+            "nav .time { font-size: 10px; line-height: 1; white-space: nowrap; }",
+            page,
+        )
+        self.assertIn("nav a { display: flex; flex-direction: column; gap: 0;", page)
         self.assertIn('font-family: "Segoe UI", system-ui, sans-serif;', page)
         self.assertNotIn("0.75rem", page)
         link = nav.split("<a ", 1)[1]
@@ -269,6 +272,38 @@ class DocumentTests(unittest.TestCase):
             page,
         )
         self.assertNotIn("nav .label { font-size", page)
+
+    def test_navigator_time_groups_with_the_prompt_below(self):
+        page = render_html(
+            Transcript(
+                blocks=[
+                    Block("you", text="First", timestamp="Oct 23, 2026 11:13 AM"),
+                    Block("you", text="Second"),
+                    Block("you", text="Third", timestamp="Oct 23, 2026 01:08 PM"),
+                ]
+            ),
+            **self.meta,
+        )
+        row = "nav li { display: flex; align-items: flex-start; gap: 0.5rem; }"
+        self.assertIn(
+            "nav .time { font-size: 10px; line-height: 1; white-space: nowrap; }",
+            page,
+        )
+        self.assertIn("nav a { display: flex; flex-direction: column; gap: 0;", page)
+        self.assertNotIn("0.75rem", page)
+        self.assertIn("nav li + li { margin-top: 0.85rem; }", page)
+        self.assertIn(row, page)
+        self.assertNotIn("margin-top", row)
+        link = page.split("<a ", 1)[1]
+        self.assertLess(link.index('<span class="time">'), link.index('<span class="label">'))
+
+    def test_markdown_keeps_the_catalog_heading(self):
+        transcript = Transcript(
+            blocks=[Block("you", text="Prompt", timestamp="Oct 23, 2026 11:13 AM")]
+        )
+        markdown = render_markdown(transcript, **self.meta)
+        self.assertIn("## User · Oct 23, 2026 11:13 AM", markdown)
+        self.assertNotIn("0.85rem", markdown)
 
     def test_navigator_column_is_30rem_from_70rem(self):
         page = render_html(self.transcript, **self.meta)
