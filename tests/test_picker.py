@@ -1,12 +1,16 @@
+import contextlib
 import io
+import sys
 import tempfile
+import types
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 from ai_chat_export.__main__ import export_with_picker
 from ai_chat_export.catalog import Chat, load_catalog
-from ai_chat_export.picker import TIME_WIDTH, render_frame, run_picker
+from ai_chat_export.picker import TIME_WIDTH, render_frame, run_picker, teardown_terminal
 from tests.support import sample_messages, write_chat
 
 
@@ -104,7 +108,14 @@ class PickerTests(unittest.TestCase):
         self.assertIsNone(result.chat_id)
         self.assertIn("> Fantasy Map Maker", frames[-1])
         self.assertIn("theme: dark", frames[-1])
-        self.assertIn("file: Fantasy Map Maker.html_", frames[-1])
+        name = "file: Fantasy Map Maker.html"
+        self.assertIn(name, frames[-1])
+        self.assertNotIn(name + "_", frames[-1])
+        self.assertIn(f";{len(name) + 1}H", frames[-1])
+        self.assertIn("\x1b[1 q", frames[-1])
+        self.assertIn("\x1b[?25h", frames[-1])
+        self.assertIn("\x1b[?25l", frames[0])
+        self.assertNotIn("\x1b[1 q", frames[0])
         self.assertIn("type to edit", frames[-1])
         self.assertIn("Enter names the file", frames[0])
 
@@ -117,6 +128,8 @@ class PickerTests(unittest.TestCase):
         self.assertIn("> Fantasy Map Maker", frames[-1])
         self.assertNotIn("type to edit", frames[-1])
         self.assertNotIn("file:", frames[-1])
+        self.assertIn("\x1b[?25l", frames[-1])
+        self.assertNotIn("\x1b[1 q", frames[-1])
 
         _, frames = self._frames(["i", "enter"])
         text = frames[-1]
@@ -125,8 +138,12 @@ class PickerTests(unittest.TestCase):
         long_keys = ["enter", *["x"] * 90]
         _, frames = self._frames(long_keys, width=80)
         lines = frames[-1].splitlines()
-        self.assertEqual(len(lines[-2]), 80)
-        self.assertTrue(lines[-2].endswith("x_"))
+        hint = "type to edit   Enter writes   Esc returns"
+        name = lines[lines.index(hint) - 1]
+        self.assertEqual(len(name), 79)
+        self.assertTrue(name.endswith("x"))
+        self.assertIn(";80H", frames[-1])
+        self.assertIn("\x1b[1 q", frames[-1])
         self.assertIn("> Fantasy Map Maker", frames[-1])
         self.assertIn("-" * 80, frames[-1])
 
@@ -342,6 +359,29 @@ class PickerTests(unittest.TestCase):
         self.assertEqual(code, 130)
         self.assertEqual(restored, ["setup", "teardown"])
         self.assertFalse((self.root / "unused").exists())
+
+    def test_teardown_shows_the_default_cursor(self):
+        for saved in (None, object()):
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                teardown_terminal(saved)
+            text = stdout.getvalue()
+            self.assertIn("\x1b[?25h", text)
+            self.assertIn("\x1b[0 q", text)
+
+        termios = types.ModuleType("termios")
+        termios.TCSADRAIN = 1
+        termios.tcsetattr = mock.Mock()
+        stdout = io.StringIO()
+        with (
+            contextlib.redirect_stdout(stdout),
+            mock.patch.dict(sys.modules, {"termios": termios}),
+            mock.patch("ai_chat_export.picker.os.name", "posix"),
+        ):
+            teardown_terminal(["saved-attributes"])
+        self.assertIn("\x1b[?25h", stdout.getvalue())
+        self.assertIn("\x1b[0 q", stdout.getvalue())
+        termios.tcsetattr.assert_called_once_with(sys.stdin.fileno(), 1, ["saved-attributes"])
 
 
 if __name__ == "__main__":

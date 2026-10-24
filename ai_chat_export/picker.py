@@ -49,7 +49,7 @@ def run_picker(
             selected = min(selected, len(shown) - 1)
         else:
             selected = 0
-        write(render_frame(shown, selected, scope, theme, rows, width, show_id))
+        write(render_frame(shown, selected, scope, theme, rows, width, show_id) + HIDE_CURSOR)
 
     def paint_name() -> None:
         shown = visible()
@@ -145,12 +145,22 @@ def render_frame(
     return "\n".join(lines) + "\n"
 
 
+HIDE_CURSOR = "\x1b[?25l"
+SHOW_CURSOR = "\x1b[?25h"
+BLOCK_CURSOR = "\x1b[1 q"
+DEFAULT_CURSOR = "\x1b[0 q"
+
+
 def append_name_line(frame: str, draft: str, frame_width: int) -> str:
     body = frame[:-1] if frame.endswith("\n") else frame
-    line = f"file: {draft}_"
-    if frame_width > 0 and len(line) > frame_width:
-        line = line[-frame_width:]
-    return body + f"\n{line}\ntype to edit   Enter writes   Esc returns\n"
+    line = f"file: {draft}"
+    room = max(frame_width - 1, 0)
+    if len(line) > room:
+        line = line[-room:] if room else ""
+    text = body + f"\n{line}\ntype to edit   Enter writes   Esc returns\n"
+    row = len(body.splitlines()) + 1
+    column = len(line) + 1
+    return f"{text}\x1b[{row};{column}H{BLOCK_CURSOR}{SHOW_CURSOR}"
 
 
 def default_file_name(chat: Chat, extension: str) -> str:
@@ -255,6 +265,8 @@ def setup_terminal():
 
 
 def teardown_terminal(saved) -> None:
+    sys.stdout.write(SHOW_CURSOR + DEFAULT_CURSOR)
+    sys.stdout.flush()
     if saved is None or os.name == "nt":
         return
     import termios
