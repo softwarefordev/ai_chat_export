@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 from pathlib import Path
 
 from ai_chat_export.catalog import Chat, load_catalog
@@ -19,6 +20,48 @@ from ai_chat_export.render_html import render_html
 from ai_chat_export.render_md import render_markdown
 from ai_chat_export.store import load_conversation
 from ai_chat_export.transcript import build_transcript
+
+_FRAMES = ("...", "..", ".")
+
+
+class activity:
+    """Cycle `...`, `..`, and `.` on a terminal while quiet work runs."""
+
+    def __init__(self, stream, interval: float = 0.2) -> None:
+        self.stream = stream
+        self.interval = interval
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._shown = False
+
+    def __enter__(self) -> activity:
+        isatty = getattr(self.stream, "isatty", None)
+        if not callable(isatty) or not isatty():
+            return self
+        self._shown = True
+        self.stream.write("\n" + _FRAMES[0])
+        self.stream.flush()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+        return self
+
+    def _spin(self) -> None:
+        index = 1
+        while not self._stop.wait(self.interval):
+            frame = _FRAMES[index % len(_FRAMES)]
+            index += 1
+            self.stream.write("\r" + frame.ljust(len(_FRAMES[0])))
+            self.stream.flush()
+
+    def __exit__(self, *exc: object) -> bool:
+        if not self._shown:
+            return False
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
+        self.stream.write("\r" + " " * len(_FRAMES[0]) + "\r")
+        self.stream.flush()
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -176,53 +219,67 @@ def export_session(
     write_markdown: bool = False,
     stdout=None,
     stderr=None,
+    activity_interval: float = 0.2,
 ) -> int:
     output = stdout or sys.stdout
     error = stderr or sys.stderr
     warnings: list[str] = []
-    chats = load_catalog(chats_root, warnings)
+    with activity(error, activity_interval):
+        chats = load_catalog(chats_root, warnings)
     for note in warnings:
         print(note, file=error)
-    chat = next((item for item in chats if item.id == chat_id), None)
-    if chat is None:
-        print(f"Chat not found: {chat_id}", file=error)
+    failure: str | None = None
+    html_path: Path | None = None
+    md_path: Path | None = None
+    with activity(error, activity_interval):
+        chat = next((item for item in chats if item.id == chat_id), None)
+        if chat is None:
+            failure = f"Chat not found: {chat_id}"
+        elif not chat.has_store:
+            failure = f"Chat has no transcript: {chat_id}"
+        else:
+            try:
+                conversation = load_conversation(chat.path / "store.db")
+            except (OSError, ValueError, KeyError) as exc:
+                failure = f"Chat has no transcript: {chat_id} ({exc})"
+            else:
+                if not conversation.messages:
+                    failure = f"Chat has no transcript: {chat_id}"
+                else:
+                    transcript = build_transcript(
+                        conversation.messages,
+                        _prompts(chat.path),
+                        verbose=verbose,
+                        show_tools=show_tools,
+                        show_detail=show_detail,
+                        skipped=conversation.skipped,
+                        unlinked_images=conversation.unlinked_images,
+                    )
+                    stem = safe_stem(chat.title, chat.id)
+                    html_path = out_dir / f"{stem}.html"
+                    md_path = out_dir / f"{stem}.md"
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    document = {
+                        "title": chat.display_title,
+                        "workspace": chat.workspace_name,
+                        "timestamp": chat.updated_label,
+                    }
+                    html_path.write_text(
+                        render_html(transcript, theme=theme, **document),
+                        encoding="utf-8",
+                    )
+                    if write_markdown:
+                        md_path.write_text(
+                            render_markdown(transcript, **document),
+                            encoding="utf-8",
+                        )
+    if failure is not None:
+        print(failure, file=error)
         return 1
-    if not chat.has_store:
-        print(f"Chat has no transcript: {chat_id}", file=error)
-        return 1
-    try:
-        conversation = load_conversation(chat.path / "store.db")
-    except (OSError, ValueError, KeyError) as exc:
-        print(f"Chat has no transcript: {chat_id} ({exc})", file=error)
-        return 1
-    if not conversation.messages:
-        print(f"Chat has no transcript: {chat_id}", file=error)
-        return 1
-    transcript = build_transcript(
-        conversation.messages,
-        _prompts(chat.path),
-        verbose=verbose,
-        show_tools=show_tools,
-        show_detail=show_detail,
-        skipped=conversation.skipped,
-        unlinked_images=conversation.unlinked_images,
-    )
-    stem = safe_stem(chat.title, chat.id)
-    html_path = out_dir / f"{stem}.html"
-    md_path = out_dir / f"{stem}.md"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    document = {
-        "title": chat.display_title,
-        "workspace": chat.workspace_name,
-        "timestamp": chat.updated_label,
-    }
-    html_path.write_text(
-        render_html(transcript, theme=theme, **document),
-        encoding="utf-8",
-    )
+    assert html_path is not None
     print(html_path.resolve(), file=output)
     if write_markdown:
-        md_path.write_text(render_markdown(transcript, **document), encoding="utf-8")
+        assert md_path is not None
         print(md_path.resolve(), file=output)
     return 0
 

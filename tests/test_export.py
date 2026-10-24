@@ -3,10 +3,11 @@ import hashlib
 import io
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
-from ai_chat_export.__main__ import export_session, main, safe_stem
+from ai_chat_export.__main__ import activity, export_session, main, safe_stem
 from ai_chat_export.catalog import format_timestamp
 from tests.support import sample_messages, write_chat
 
@@ -344,6 +345,96 @@ class ExportTests(unittest.TestCase):
                     self.assertEqual(document.count(command), 1)
                 else:
                     self.assertNotIn(command, document)
+
+    def test_terminal_shows_dots_before_the_path_and_a_pipe_stays_quiet(self):
+        self._chat()
+        stdout = io.StringIO()
+        terminal = Terminal()
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="chat-1",
+            out_dir=self.out,
+            stdout=stdout,
+            stderr=terminal,
+        )
+        self.assertEqual(code, 0)
+        printed = stdout.getvalue()
+        self.assertIn(str((self.out / "Fantasy Map Maker.html").resolve()), printed)
+        self.assertNotIn("...", printed)
+        frames = terminal.getvalue()
+        self.assertIn("...", frames)
+        self.assertNotIn("Fantasy Map Maker.html", frames)
+
+        quiet = io.StringIO()
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="chat-1",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+            stderr=quiet,
+        )
+        self.assertEqual(code, 0)
+        self.assertNotIn("...", quiet.getvalue())
+
+    def test_open_stretch_advances_through_each_frame(self):
+        terminal = Terminal()
+        with activity(terminal, 0.03):
+            time.sleep(0.12)
+        text = terminal.getvalue()
+        first = text.find("...")
+        self.assertGreaterEqual(first, 0)
+        second = text.find("\r..", first + 3)
+        self.assertGreater(second, first)
+        third = text.find("\r.", second + 3)
+        self.assertGreater(third, second)
+
+    def test_missing_chat_shows_dots_before_the_error(self):
+        terminal = Terminal()
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="missing",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+            stderr=terminal,
+        )
+        self.assertEqual(code, 1)
+        text = terminal.getvalue()
+        error = "Chat not found: missing"
+        self.assertLess(text.find("..."), text.find(error))
+        self.assertIn("\r   \r" + error + "\n", text)
+
+    def test_catalog_warning_is_a_complete_line_and_the_cycle_resumes(self):
+        write_chat(
+            self.chats,
+            chat_id="bad",
+            cwd=str(self.root),
+            title="Bad",
+            schema=2,
+            messages=self.messages,
+            prompts=self.prompts,
+        )
+        self._chat()
+        terminal = Terminal()
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="chat-1",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+            stderr=terminal,
+        )
+        self.assertEqual(code, 0)
+        text = terminal.getvalue()
+        warning = "Unsupported schemaVersion 2 for bad"
+        warn_at = text.find(warning)
+        self.assertGreaterEqual(warn_at, 0)
+        self.assertIn("\r   \r" + warning + "\n", text)
+        self.assertLess(text.find("..."), warn_at)
+        self.assertIn("...", text[warn_at + len(warning):])
+
+
+class Terminal(io.StringIO):
+    def isatty(self) -> bool:
+        return True
 
 
 if __name__ == "__main__":
