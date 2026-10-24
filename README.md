@@ -17,7 +17,7 @@ Open the picker for chats under `~/.cursor/chats`:
 ai-chat-export
 ```
 
-The list shows the title, workspace, and time in aligned columns. Up and down move. Left and right switch `All chats` and `This workspace`. Enter asks for a file name. The line starts as the title file name. Enter on that line writes the file. Esc on the name line returns to the list. Esc on the list closes. The footer shows the theme that will be written. `i` shows the selected chat id.
+The list shows the title, workspace, and time in aligned columns. Up and down move. Left and right switch `All chats` and `This workspace`. Enter asks for a file name. The chat list stays on screen. The line starts as the title file name. Enter on that line writes the file. Esc on the name line returns to the list. Esc on the list closes. The footer shows the theme that will be written. `i` shows the selected chat id.
 
 Export one chat without the picker:
 

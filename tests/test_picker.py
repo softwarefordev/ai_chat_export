@@ -102,8 +102,33 @@ class PickerTests(unittest.TestCase):
     def test_movement_scope_enter_esc_and_backspace(self):
         result, frames = self._frames(["down", "up", "enter"])
         self.assertIsNone(result.chat_id)
-        self.assertIn("Fantasy Map Maker.html", frames[-1])
+        self.assertIn("> Fantasy Map Maker", frames[-1])
+        self.assertIn("theme: dark", frames[-1])
+        self.assertIn("file: Fantasy Map Maker.html_", frames[-1])
+        self.assertIn("type to edit", frames[-1])
         self.assertIn("Enter names the file", frames[0])
+
+        result, frames = self._frames(["enter", "down"])
+        self.assertIn("> Fantasy Map Maker", frames[-1])
+        self.assertNotIn("> Apply Opsx", frames[-1])
+
+        result, frames = self._frames(["enter", "esc"])
+        self.assertIsNone(result.chat_id)
+        self.assertIn("> Fantasy Map Maker", frames[-1])
+        self.assertNotIn("type to edit", frames[-1])
+        self.assertNotIn("file:", frames[-1])
+
+        _, frames = self._frames(["i", "enter"])
+        text = frames[-1]
+        self.assertLess(text.index("id: here"), text.index("file: "))
+
+        long_keys = ["enter", *["x"] * 90]
+        _, frames = self._frames(long_keys, width=80)
+        lines = frames[-1].splitlines()
+        self.assertEqual(len(lines[-2]), 80)
+        self.assertTrue(lines[-2].endswith("x_"))
+        self.assertIn("> Fantasy Map Maker", frames[-1])
+        self.assertIn("-" * 80, frames[-1])
 
         result, frames = self._frames(["down", "up", "enter", "enter"])
         self.assertEqual(result.chat_id, "here")
@@ -276,7 +301,7 @@ class PickerTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(list(cancelled.iterdir()), [])
-        self.assertIn("File name:", stdout.getvalue())
+        self.assertIn("type to edit", stdout.getvalue())
         self.assertIn("Enter names the file", stdout.getvalue())
 
         untitled = _chat("", "bench", "bare-id", datetime(2026, 8, 15, 16, 42))

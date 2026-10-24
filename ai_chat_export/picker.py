@@ -51,6 +51,11 @@ def run_picker(
             selected = 0
         write(render_frame(shown, selected, scope, theme, rows, width, show_id))
 
+    def paint_name() -> None:
+        shown = visible()
+        frame = render_frame(shown, selected, scope, theme, rows, width, show_id)
+        write(append_name_line(frame, draft, _frame_width(width)))
+
     paint()
     for key in keys:
         if naming is not None:
@@ -65,7 +70,7 @@ def run_picker(
                 draft = draft[:-1]
             elif len(key) == 1 and key.isprintable():
                 draft += key
-            write(render_name_frame(draft))
+            paint_name()
             continue
         shown = visible()
         if key == "up" and shown:
@@ -89,7 +94,7 @@ def run_picker(
             naming = shown[selected]
             default_name = default_file_name(naming, extension)
             draft = default_name
-            write(render_name_frame(draft))
+            paint_name()
             continue
         else:
             continue
@@ -140,8 +145,12 @@ def render_frame(
     return "\n".join(lines) + "\n"
 
 
-def render_name_frame(draft: str) -> str:
-    return f"File name: {draft}\nEnter writes  Esc returns\n"
+def append_name_line(frame: str, draft: str, frame_width: int) -> str:
+    body = frame[:-1] if frame.endswith("\n") else frame
+    line = f"file: {draft}_"
+    if frame_width > 0 and len(line) > frame_width:
+        line = line[-frame_width:]
+    return body + f"\n{line}\ntype to edit   Enter writes   Esc returns\n"
 
 
 def default_file_name(chat: Chat, extension: str) -> str:

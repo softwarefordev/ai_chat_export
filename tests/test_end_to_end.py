@@ -50,6 +50,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("`--markdown` writes the Markdown file", readme)
         self.assertIn("`--name` writes that file path", readme)
         self.assertIn("Enter asks for a file name.", readme)
+        self.assertIn("The chat list stays on screen.", readme)
         self.assertIn("`--name` requires `--id`.", readme)
         self.assertNotIn("writes nothing", readme)
 

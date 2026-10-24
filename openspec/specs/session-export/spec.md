@@ -223,7 +223,7 @@ Running the CLI without a chat id SHALL open a picker. Up and down SHALL move th
 
 #### Scenario: Export from the picker
 - **WHEN** the user presses Enter on a selected chat that has a conversation
-- **THEN** the name line shows the title file name and no file is written yet
+- **THEN** the same screen still shows the selected chat and the theme, the name line shows the title file name and says that typing edits it, and no file is written yet
 
 #### Scenario: Confirm the default name
 - **WHEN** the user presses Enter on the unchanged name line
@@ -243,7 +243,7 @@ Running the CLI without a chat id SHALL open a picker. Up and down SHALL move th
 
 #### Scenario: Esc from the name line
 - **WHEN** the user presses Esc on the name line
-- **THEN** the chat list returns and no file is written
+- **THEN** the chat list returns without the name line and no file is written
 
 #### Scenario: Close without export
 - **WHEN** the user presses Esc on the chat list
@@ -574,3 +574,14 @@ A navigator turn time SHALL use a smaller font than the query text in that entry
 #### Scenario: Unparsed time is smaller
 - **WHEN** the navigator shows an unparsed turn time beside a query
 - **THEN** that time uses the same smaller font
+
+### Requirement: Name line stays on the list
+While the file-name line is open, the picker SHALL keep the chat list, the selected row, and the theme on the same screen. The name line SHALL say that typing edits the name. A draft longer than the picker width SHALL show its end, and the chat columns SHALL stay aligned. Up and down SHALL leave the selected chat unchanged while the name line is open.
+
+#### Scenario: Long file name
+- **WHEN** the draft is longer than the picker width
+- **THEN** the name line shows the end of the draft and the chat columns stay aligned
+
+#### Scenario: Movement while naming
+- **WHEN** the user presses up or down while the name line is open
+- **THEN** the selected chat stays the same and the list remains on screen
