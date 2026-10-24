@@ -25,6 +25,12 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn('name = "ai-chat-export"', project)
         self.assertIn('ai-chat-export = "ai_chat_export.__main__:main"', project)
         self.assertIn("--theme", completed.stdout)
+        self.assertIn("terminal-dark", completed.stdout)
+        self.assertIn("terminal-light", completed.stdout)
+        self.assertIn("dark-web", completed.stdout)
+        self.assertIn("light-web", completed.stdout)
+        self.assertIn("default: terminal-", completed.stdout)
+        self.assertIn("dark).", completed.stdout)
         self.assertIn("--tools", completed.stdout)
         self.assertIn("--detail", completed.stdout)
         self.assertIn("--markdown", completed.stdout)
@@ -38,6 +44,8 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("--detail", readme)
         self.assertIn("Cursor command blocks", readme)
         self.assertIn("HTML is the default.", readme)
+        self.assertIn("terminal-dark", readme)
+        self.assertIn("--theme terminal-light", readme)
         self.assertIn(
             "The list shows the title, workspace, and time in aligned columns.",
             readme,
@@ -53,6 +61,32 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("The chat list stays on screen.", readme)
         self.assertIn("`--name` requires `--id`.", readme)
         self.assertNotIn("writes nothing", readme)
+
+    def test_former_theme_names_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ai_chat_export",
+                    "--theme",
+                    "dark",
+                    "--id",
+                    "missing",
+                    "--chats-root",
+                    str(root),
+                    "--out",
+                    str(root),
+                ],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertEqual(list(root.glob("*.html")), [])
+            self.assertNotIn("Chat not found", completed.stderr)
 
     def test_id_export_of_synthetic_fixture(self):
         with tempfile.TemporaryDirectory() as tmp:

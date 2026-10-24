@@ -36,18 +36,35 @@ class DocumentTests(unittest.TestCase):
             "timestamp": "Aug 15, 2026 04:42 PM",
         }
 
-    def test_dark_is_default_and_light_is_separate(self):
-        dark = render_html(self.transcript, theme="dark", **self.meta)
-        light = render_html(self.transcript, theme="light", **self.meta)
-        self.assertIn("#161616", dark)
-        self.assertNotIn("#f7f7f4", dark)
-        self.assertIn("#f7f7f4", light)
-        self.assertNotIn("#161616", light)
-        for page in (dark, light):
-            self.assertNotIn("<script", page.lower())
-            self.assertNotIn("http", page.lower())
-            self.assertIn("Please add a river tool.", page)
-            self.assertIn("The river tool lives in tools/river.py.", page)
+    def test_terminal_dark_is_the_default(self):
+        page = render_html(self.transcript, **self.meta)
+        dark_web = render_html(self.transcript, theme="dark-web", **self.meta)
+        light_web = render_html(self.transcript, theme="light-web", **self.meta)
+        terminal_light = render_html(self.transcript, theme="terminal-light", **self.meta)
+        self.assertIn("#071207", page)
+        self.assertIn("font: 18px/1.5 Consolas, ui-monospace, monospace;", page)
+        self.assertIn("font-family: Consolas, ui-monospace, monospace;", page)
+        self.assertIn("border-radius: 0;", page)
+        self.assertIn("--user: #12301a;", page)
+        self.assertIn("--agent: #0b1610;", page)
+        self.assertIn("--mark: #e2c15a;", page)
+        self.assertIn("border-left: 3px solid var(--mark);", page)
+        self.assertNotIn("#161616", page)
+        self.assertNotIn("#f7f7f4", page)
+        self.assertIn("#161616", dark_web)
+        self.assertIn('font: 18px/1.5 Georgia, "Iowan Old Style", Palatino, serif;', dark_web)
+        self.assertIn('font-family: "Segoe UI", system-ui, sans-serif;', dark_web)
+        self.assertIn("border-radius: 8px;", dark_web)
+        self.assertIn("--mark: #e0b040;", dark_web)
+        self.assertIn("#f7f7f4", light_web)
+        self.assertNotIn("#161616", light_web)
+        self.assertIn("#e6f5df", terminal_light)
+        self.assertIn("--mark: #7a5b12;", terminal_light)
+        for rendered in (page, dark_web, light_web, terminal_light):
+            self.assertNotIn("<script", rendered.lower())
+            self.assertNotIn("http", rendered.lower())
+            self.assertIn("Please add a river tool.", rendered)
+            self.assertIn("The river tool lives in tools/river.py.", rendered)
 
     def test_markdown_matches_visible_turns_without_color(self):
         messages, prompts = sample_messages()
@@ -65,6 +82,8 @@ class DocumentTests(unittest.TestCase):
             self.assertIn(text, markdown)
         self.assertNotIn("#161616", markdown)
         self.assertNotIn("#f7f7f4", markdown)
+        self.assertNotIn("#071207", markdown)
+        self.assertNotIn("#e6f5df", markdown)
         self.assertNotIn("SECRET_COMMAND_XYZ", markdown)
         self.assertEqual(page.count("<h2>Agent</h2>"), 1)
         self.assertEqual(markdown.count("## Agent"), 1)
@@ -148,8 +167,8 @@ class DocumentTests(unittest.TestCase):
                 Block("system", text="Note"),
             ]
         )
-        dark = render_html(transcript, theme="dark", **self.meta)
-        light = render_html(transcript, theme="light", **self.meta)
+        dark = render_html(transcript, theme="dark-web", **self.meta)
+        light = render_html(transcript, theme="light-web", **self.meta)
         self.assertIn("--user: #2c261c;", dark)
         self.assertIn("--agent: #1e2428;", dark)
         self.assertIn("--panel: #222222;", dark)
@@ -254,7 +273,7 @@ class DocumentTests(unittest.TestCase):
                 Block("you", text="Stored query", timestamp="sometime next week"),
             ]
         )
-        page = render_html(transcript, **self.meta)
+        page = render_html(transcript, theme="dark-web", **self.meta)
         nav = page.split("<article>", 1)[0]
         self.assertIn(
             "nav .time { font-size: 10px; line-height: 1; white-space: nowrap; }",

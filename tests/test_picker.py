@@ -61,7 +61,7 @@ class PickerTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _frames(self, keys, theme="dark", width=80, extension=".html"):
+    def _frames(self, keys, theme="terminal-dark", width=80, extension=".html"):
         frames: list[str] = []
         result = run_picker(
             self.chats,
@@ -78,7 +78,7 @@ class PickerTests(unittest.TestCase):
         width = 72
         short = _chat("Map", "SoggyMapMaker", "short", datetime(2026, 9, 1, 9, 5))
         long_title = _chat("T" * 80, "SpiralBench", "long", datetime(2026, 8, 15, 16, 42))
-        frame = render_frame([long_title, short], 0, "all", "dark", width=width)
+        frame = render_frame([long_title, short], 0, "all", "terminal-dark", width=width)
         lines = frame.splitlines()
         header, rule, first, second = lines[0], lines[1], lines[2], lines[3]
         self.assertEqual(rule, "-" * width)
@@ -97,7 +97,7 @@ class PickerTests(unittest.TestCase):
         self.assertLess(workspace_at, width - TIME_WIDTH)
 
         wide_workspace = _chat("Title", "W" * 40, "wide", datetime(2026, 8, 15, 16, 42))
-        wide = render_frame([wide_workspace], 0, "workspace", "dark", width=width)
+        wide = render_frame([wide_workspace], 0, "workspace", "terminal-dark", width=width)
         row = wide.splitlines()[2]
         cell = row[-(TIME_WIDTH + 2 + 24) : -(TIME_WIDTH + 2)]
         self.assertEqual(cell, ("W" * 21) + "...")
@@ -107,7 +107,7 @@ class PickerTests(unittest.TestCase):
         result, frames = self._frames(["down", "up", "enter"])
         self.assertIsNone(result.chat_id)
         self.assertIn("> Fantasy Map Maker", frames[-1])
-        self.assertIn("theme: dark", frames[-1])
+        self.assertIn("theme: terminal-dark", frames[-1])
         name = "file: Fantasy Map Maker.html"
         self.assertIn(name, frames[-1])
         self.assertNotIn(name + "_", frames[-1])
@@ -166,12 +166,17 @@ class PickerTests(unittest.TestCase):
 
         result, frames = self._frames(["esc"])
         self.assertIsNone(result.chat_id)
-        self.assertIn("theme: dark", frames[-1])
+        self.assertIn("theme: terminal-dark", frames[-1])
 
-        result, frames = self._frames(["backspace", "esc"], theme="light")
+        result, frames = self._frames(["backspace", "esc"], theme="terminal-light")
         self.assertIsNone(result.chat_id)
         self.assertFalse(result.delete_requested)
-        self.assertIn("theme: light", frames[-1])
+        self.assertIn("theme: terminal-light", frames[-1])
+
+    def test_footer_shows_the_requested_theme(self):
+        for name in ("terminal-light", "dark-web", "light-web"):
+            _, frames = self._frames(["esc"], theme=name)
+            self.assertIn(f"theme: {name}", frames[-1])
 
     def test_id_toggle_follows_selection_and_hides_for_an_empty_list(self):
         _, frames = self._frames(["esc"])
@@ -193,7 +198,7 @@ class PickerTests(unittest.TestCase):
         self.assertNotIn("id: here", frames[-1])
 
         frames = []
-        run_picker([], "dark", ["i"], str(self.launch), frames.append, width=80)
+        run_picker([], "terminal-dark", ["i"], str(self.launch), frames.append, width=80)
         self.assertNotIn("id:", frames[-1])
         self.assertIn("i id", frames[-1])
 
@@ -204,7 +209,7 @@ class PickerTests(unittest.TestCase):
         restored = []
         code = export_with_picker(
             self.chats,
-            theme="dark",
+            theme="terminal-dark",
             keys=["enter", "enter"],
             launch_dir=str(self.launch),
             out_dir=out,
@@ -226,7 +231,7 @@ class PickerTests(unittest.TestCase):
         stdout = io.StringIO()
         code = export_with_picker(
             self.chats,
-            theme="dark",
+            theme="terminal-dark",
             keys=["enter", "enter"],
             launch_dir=str(self.launch),
             out_dir=marked,
@@ -250,7 +255,7 @@ class PickerTests(unittest.TestCase):
         restored.clear()
         code = export_with_picker(
             self.chats,
-            theme="dark",
+            theme="terminal-dark",
             keys=["esc"],
             launch_dir=str(self.launch),
             out_dir=empty,
@@ -270,7 +275,7 @@ class PickerTests(unittest.TestCase):
         edited.mkdir()
         code = export_with_picker(
             self.chats,
-            theme="dark",
+            theme="terminal-dark",
             keys=["enter", *["backspace"] * len(default), *"notes", "enter"],
             launch_dir=str(self.launch),
             out_dir=edited,
@@ -288,7 +293,7 @@ class PickerTests(unittest.TestCase):
         cleared.mkdir()
         code = export_with_picker(
             self.chats,
-            theme="dark",
+            theme="terminal-dark",
             keys=["enter", *["backspace"] * len(default), "enter"],
             launch_dir=str(self.launch),
             out_dir=cleared,
@@ -306,7 +311,7 @@ class PickerTests(unittest.TestCase):
         stdout = io.StringIO()
         code = export_with_picker(
             self.chats,
-            theme="dark",
+            theme="terminal-dark",
             keys=["enter", "esc", "esc"],
             launch_dir=str(self.launch),
             out_dir=cancelled,
@@ -324,14 +329,14 @@ class PickerTests(unittest.TestCase):
         untitled = _chat("", "bench", "bare-id", datetime(2026, 8, 15, 16, 42))
         frames: list[str] = []
         result = run_picker(
-            [untitled], "dark", ["enter"], str(self.launch), frames.append, extension=".html"
+            [untitled], "terminal-dark", ["enter"], str(self.launch), frames.append, extension=".html"
         )
         self.assertIsNone(result.chat_id)
         self.assertIn("bare-id.html", frames[-1])
 
         result = run_picker(
             [untitled],
-            "dark",
+            "terminal-dark",
             ["enter", *["backspace"] * len("bare-id.html"), *"a/b", "enter"],
             str(self.launch),
             frames.append,
@@ -346,7 +351,7 @@ class PickerTests(unittest.TestCase):
         restored = []
         code = export_with_picker(
             self.chats,
-            theme="dark",
+            theme="terminal-dark",
             keys=keys(),
             launch_dir=str(self.launch),
             out_dir=self.root / "unused",

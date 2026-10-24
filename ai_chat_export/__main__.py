@@ -75,9 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--id", dest="chat_id", help="Chat id to export. Omit to open the picker.")
     parser.add_argument(
         "--theme",
-        choices=("dark", "light"),
-        default="dark",
-        help="HTML theme written into the file (default: dark).",
+        choices=("terminal-dark", "terminal-light", "dark-web", "light-web"),
+        default="terminal-dark",
+        help="HTML theme written into the file (default: terminal-dark).",
     )
     parser.add_argument(
         "--tools",
@@ -237,7 +237,7 @@ def export_session(
     chats_root: Path,
     chat_id: str,
     out_dir: Path,
-    theme: str = "dark",
+    theme: str = "terminal-dark",
     verbose: bool = False,
     show_tools: bool = False,
     show_detail: bool = False,

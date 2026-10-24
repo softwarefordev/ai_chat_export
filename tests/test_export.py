@@ -55,7 +55,7 @@ class ExportTests(unittest.TestCase):
         printed = stdout.getvalue()
         self.assertIn(str(html_path.resolve()), printed)
         self.assertNotIn(str(md_path.resolve()), printed)
-        self.assertIn("#161616", html_path.read_text(encoding="utf-8"))
+        self.assertIn("#071207", html_path.read_text(encoding="utf-8"))
 
     def test_current_directory_is_the_default(self):
         self._chat()
@@ -125,7 +125,7 @@ class ExportTests(unittest.TestCase):
             chats_root=self.chats,
             chat_id="chat-1",
             out_dir=self.out,
-            theme="light",
+            theme="light-web",
             verbose=True,
             stdout=io.StringIO(),
         )

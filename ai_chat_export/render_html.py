@@ -8,30 +8,97 @@ from datetime import datetime
 
 from ai_chat_export.transcript import Block, Transcript
 
-_DARK = {
-    "bg": "#161616",
-    "text": "#f2f2f2",
-    "muted": "#a3a3a3",
-    "time": "#e0b040",
-    "panel": "#222222",
-    "user": "#2c261c",
-    "agent": "#1e2428",
-    "mark": "#e0b040",
-    "rule": "#3a3a3a",
-    "code": "#101010",
-}
+_WEB_BODY = '18px/1.5 Georgia, "Iowan Old Style", Palatino, serif'
+_WEB_NAV = '"Segoe UI", system-ui, sans-serif'
+_TERM_BODY = "18px/1.5 Consolas, ui-monospace, monospace"
+_TERM_NAV = "Consolas, ui-monospace, monospace"
 
-_LIGHT = {
-    "bg": "#f7f7f4",
-    "text": "#1c1c1c",
-    "muted": "#5e5e5e",
-    "time": "#8a5a00",
-    "panel": "#ffffff",
-    "user": "#f6efe4",
-    "agent": "#f3f5f7",
-    "mark": "#8a5a00",
-    "rule": "#d9d4cc",
-    "code": "#f0ece4",
+
+def _theme(colors: dict[str, str], *, body: str, nav: str, radius: str) -> dict[str, str]:
+    theme = dict(colors)
+    theme["body"] = body
+    theme["nav"] = nav
+    theme["radius"] = radius
+    return theme
+
+
+_DARK_WEB = _theme(
+    {
+        "bg": "#161616",
+        "text": "#f2f2f2",
+        "muted": "#a3a3a3",
+        "time": "#e0b040",
+        "panel": "#222222",
+        "user": "#2c261c",
+        "agent": "#1e2428",
+        "mark": "#e0b040",
+        "rule": "#3a3a3a",
+        "code": "#101010",
+    },
+    body=_WEB_BODY,
+    nav=_WEB_NAV,
+    radius="8px",
+)
+
+_LIGHT_WEB = _theme(
+    {
+        "bg": "#f7f7f4",
+        "text": "#1c1c1c",
+        "muted": "#5e5e5e",
+        "time": "#8a5a00",
+        "panel": "#ffffff",
+        "user": "#f6efe4",
+        "agent": "#f3f5f7",
+        "mark": "#8a5a00",
+        "rule": "#d9d4cc",
+        "code": "#f0ece4",
+    },
+    body=_WEB_BODY,
+    nav=_WEB_NAV,
+    radius="8px",
+)
+
+_TERMINAL_DARK = _theme(
+    {
+        "bg": "#071207",
+        "text": "#c6f7c0",
+        "muted": "#6ea86a",
+        "time": "#e2c15a",
+        "panel": "#0c1a10",
+        "user": "#12301a",
+        "agent": "#0b1610",
+        "mark": "#e2c15a",
+        "rule": "#1e3a24",
+        "code": "#040a05",
+    },
+    body=_TERM_BODY,
+    nav=_TERM_NAV,
+    radius="0",
+)
+
+_TERMINAL_LIGHT = _theme(
+    {
+        "bg": "#e6f5df",
+        "text": "#0e3a16",
+        "muted": "#3f6b45",
+        "time": "#7a5b12",
+        "panel": "#f4fbf1",
+        "user": "#d7f0c8",
+        "agent": "#e7f3e2",
+        "mark": "#7a5b12",
+        "rule": "#b7d4b0",
+        "code": "#f7fff4",
+    },
+    body=_TERM_BODY,
+    nav=_TERM_NAV,
+    radius="0",
+)
+
+_THEMES = {
+    "terminal-dark": _TERMINAL_DARK,
+    "terminal-light": _TERMINAL_LIGHT,
+    "dark-web": _DARK_WEB,
+    "light-web": _LIGHT_WEB,
 }
 
 _HEADINGS = {
@@ -50,9 +117,9 @@ def render_html(
     title: str,
     workspace: str,
     timestamp: str,
-    theme: str = "dark",
+    theme: str = "terminal-dark",
 ) -> str:
-    palette = _LIGHT if theme == "light" else _DARK
+    palette = _THEMES.get(theme, _THEMES["terminal-dark"])
     turns = sum(block.kind == "you" for block in transcript.blocks)
     css = _stylesheet(palette, turns)
     sections = _sections(transcript.blocks)
@@ -107,7 +174,7 @@ def _stylesheet(palette: dict[str, str], turns: int) -> str:
             "  margin: 0;",
             "  background: var(--bg);",
             "  color: var(--text);",
-            '  font: 18px/1.5 Georgia, "Iowan Old Style", Palatino, serif;',
+            f"  font: {palette['body']};",
             "}",
             "article { max-width: 44rem; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }",
             "header { border-bottom: 1px solid var(--rule); margin-bottom: 1.5rem; }",
@@ -115,12 +182,14 @@ def _stylesheet(palette: dict[str, str], turns: int) -> str:
             "h2 { font-size: 0.85rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.6rem; }",
             ".meta { display: flex; justify-content: space-between; gap: 1rem; color: var(--muted); }",
             ".time { color: var(--time); }",
-            "section { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 1rem 1.1rem; margin: 0 0 1rem; }",
+            f"section {{ background: var(--panel); border: 1px solid var(--rule); border-radius: {palette['radius']}; padding: 1rem 1.1rem; margin: 0 0 1rem; }}",
             "section.you { background: var(--user); border-left: 3px solid var(--mark); scroll-margin-top: 5rem; }",
             "section.you:target { outline: 2px solid var(--mark); }",
             "section.agent { background: var(--agent); }",
             "section.system, section.context { background: var(--panel); }",
-            'nav { position: sticky; top: 0; overflow: auto; max-height: 40vh; background: var(--bg); border-bottom: 1px solid var(--rule); padding: 0.8rem 1.2rem; font-family: "Segoe UI", system-ui, sans-serif; }',
+            "nav { position: sticky; top: 0; overflow: auto; max-height: 40vh; background: var(--bg); border-bottom: 1px solid var(--rule); padding: 0.8rem 1.2rem; font-family: "
+            + palette["nav"]
+            + "; }",
             "nav ol { list-style: none; margin: 0; padding: 0; }",
             "nav a { display: flex; flex-direction: column; gap: 0; min-width: 0; color: var(--text); text-decoration: none; }",
             "nav li { display: flex; align-items: flex-start; gap: 0.5rem; }",
