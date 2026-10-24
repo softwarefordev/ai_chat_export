@@ -12,6 +12,7 @@ from typing import TextIO
 
 from ai_chat_export.catalog import SESSION_SOURCES, Chat, allowed_sources
 from ai_chat_export.ide import load_ide_conversation, load_sessions
+from ai_chat_export.copilot import load_copilot_conversation
 from ai_chat_export.names import export_stem
 from ai_chat_export.picker import (
     call_with_restore,
@@ -120,10 +121,15 @@ def main(argv: list[str] | None = None) -> int:
         help="IDE transcript root. Defaults to ~/.cursor/projects.",
     )
     parser.add_argument(
+        "--copilot-root",
+        type=Path,
+        help="Copilot CLI session root. Defaults to ~/.copilot.",
+    )
+    parser.add_argument(
         "--source",
         action="append",
         choices=[item.argument for item in SESSION_SOURCES],
-        help="Session source to include: cursor-cli or cursor-ide. Repeat to name more than one.",
+        help="Session source to include: cursor-cli, cursor-ide, or copilot-cli. Repeat to name more than one.",
     )
     args = parser.parse_args(argv)
     if args.name is not None and not args.chat_id:
@@ -134,12 +140,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     chats_root = args.chats_root or (Path.home() / ".cursor" / "chats")
     projects_root = args.projects_root or (Path.home() / ".cursor" / "projects")
+    copilot_root = args.copilot_root or (Path.home() / ".copilot")
     sources = allowed_sources(args.source)
     out_dir = args.out or Path.cwd()
     if args.chat_id:
         return export_session(
             chats_root=chats_root,
             projects_root=projects_root,
+            copilot_root=copilot_root,
             chat_id=args.chat_id,
             out_dir=out_dir,
             theme=args.theme,
@@ -151,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
             sources=sources,
         )
     warnings: list[str] = []
-    chats = load_sessions(chats_root, projects_root, warnings)
+    chats = load_sessions(chats_root, projects_root, warnings, copilot_root)
     for note in warnings:
         print(note, file=sys.stderr)
 
@@ -184,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         return export_session(
             chats_root=chats_root,
             projects_root=projects_root,
+            copilot_root=copilot_root,
             chat_id=result.chat_id,
             out_dir=out_dir,
             theme=args.theme,
@@ -259,6 +268,7 @@ def export_session(
     chats_root: Path,
     chat_id: str,
     projects_root: Path | None = None,
+    copilot_root: Path | None = None,
     out_dir: Path,
     theme: str = "terminal-dark",
     verbose: bool = False,
@@ -281,7 +291,7 @@ def export_session(
             return 1
     warnings: list[str] = []
     with Activity(error, activity_interval):
-        chats = load_sessions(chats_root, projects_root, warnings)
+        chats = load_sessions(chats_root, projects_root, warnings, copilot_root)
         if sources is not None:
             chats = [chat for chat in chats if chat.source in sources]
     for note in warnings:
@@ -289,6 +299,7 @@ def export_session(
     failure: str | None = None
     html_path: Path | None = None
     md_path: Path | None = None
+    event_notes: list[str] = []
     with Activity(error, activity_interval):
         chat = next((item for item in chats if item.id == chat_id), None)
         if chat is None:
@@ -299,6 +310,10 @@ def export_session(
             try:
                 if chat.source == "ide":
                     conversation, prompts = load_ide_conversation(chat.path)
+                elif chat.source == "cp-cli":
+                    conversation, prompts, note = load_copilot_conversation(chat.path)
+                    if note:
+                        event_notes.append(note)
                 else:
                     conversation = load_conversation(chat.path / "store.db")
                     prompts = _prompts(chat.path)
@@ -345,6 +360,8 @@ def export_session(
                             render_html(transcript, theme=theme, **document),
                             encoding="utf-8",
                         )
+    for note in event_notes:
+        print(note, file=error)
     if failure is not None:
         print(failure, file=error)
         return 1

@@ -21,6 +21,7 @@ class SessionSource:
 SESSION_SOURCES: tuple[SessionSource, ...] = (
     SessionSource("cli", "cursor-cli", "Cursor-CLI", "Cu-CLI"),
     SessionSource("ide", "cursor-ide", "Cursor-IDE", "Cu-IDE"),
+    SessionSource("cp-cli", "copilot-cli", "Copilot-CLI", "Cp-CLI"),
 )
 
 
@@ -50,6 +51,7 @@ class Chat:
     has_store: bool
     path: Path
     source: str = "cli"
+    time_label: str | None = None
 
     @property
     def display_title(self) -> str:
@@ -59,6 +61,8 @@ class Chat:
 
     @property
     def updated_label(self) -> str:
+        if self.time_label is not None:
+            return self.time_label
         return format_timestamp(self.updated_at_ms)
 
     @property

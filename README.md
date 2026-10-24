@@ -11,13 +11,13 @@ ai-chat-export --help
 python -m ai_chat_export --help
 ```
 
-Open the picker for agent chats under `~/.cursor/chats` and IDE transcripts under `~/.cursor/projects`:
+Open the picker for agent chats under `~/.cursor/chats`, IDE transcripts under `~/.cursor/projects`, and Copilot CLI sessions under `~/.copilot`:
 
 ```bash
 ai-chat-export
 ```
 
-The list shows the title, workspace, source, and time in aligned columns. The source column reads `Cu-CLI` for an agent chat and `Cu-IDE` for an IDE transcript. Under the workspace header, `s` cycles All sources, Cursor-CLI, and Cursor-IDE. `--source cursor-cli` or `--source cursor-ide` opens on that source, and `s` can move on from there. Repeat `--source` to name more than one. A session stored in both places appears once, from the agent chat. Up and down move. Left and right switch `All chats` and `This workspace`. Enter asks for a file name. The chat list stays on screen. The line starts as the title file name. Enter on that line writes the file. Esc on the name line returns to the list. Esc on the list closes. The footer shows the theme that will be written. `i` shows the selected chat id.
+The list shows the title, workspace, source, and time in aligned columns. The source column reads `Cu-CLI` for an agent chat, `Cu-IDE` for an IDE transcript, and `Cp-CLI` for a Copilot CLI session. Under the workspace header, `s` cycles All sources, Cursor-CLI, Cursor-IDE, and Copilot-CLI. `--source cursor-cli`, `--source cursor-ide`, or `--source copilot-cli` opens on that source, and `s` can move on from there. Repeat `--source` to name more than one. A session stored in both Cursor places appears once, from the agent chat. A Copilot CLI session keeps its own row. Up and down move. Left and right switch `All chats` and `This workspace`. Enter asks for a file name. The chat list stays on screen. The line starts as the title file name. Enter on that line writes the file. Esc on the name line returns to the list. Esc on the list closes. The footer shows the theme that will be written. `i` shows the selected chat id.
 
 Export one chat without the picker:
 
@@ -31,6 +31,6 @@ ai-chat-export --id <chat-id> --markdown
 ai-chat-export --id <chat-id> --name ./exports/session.html
 ```
 
-`--chats-root` points at a different catalog directory. `--projects-root` points at a different IDE transcript directory. Files are named from the chat title. A generated name whose stem is a Windows reserved device name, such as `CON` or `NUL`, uses the chat id instead. An existing HTML file is replaced. `--markdown` replaces an existing Markdown file and leaves an existing HTML file unchanged. `--name` is written as given. `--name` requires `--id`. Passing `--name` with `--out` is an error.
+`--chats-root` points at a different catalog directory. `--projects-root` points at a different IDE transcript directory. `--copilot-root` points at a different Copilot CLI session directory. Files are named from the chat title. A generated name whose stem is a Windows reserved device name, such as `CON` or `NUL`, uses the chat id instead. An existing HTML file is replaced. `--markdown` replaces an existing Markdown file and leaves an existing HTML file unchanged. `--name` is written as given. `--name` requires `--id`. Passing `--name` with `--out` is an error.
 
-The tool only reads the chat store and the IDE transcripts. It does not delete chats, modify transcripts, or call Cursor.
+The tool only reads the chat store, the IDE transcripts, and the Copilot CLI session store. It does not delete chats, modify transcripts, or call Cursor.

@@ -288,6 +288,12 @@ def caption(part: dict) -> str:
         if isinstance(description, str) and description.strip():
             return f"Ran {description.strip()}"
         return "Ran command"
+    if name == "Grep":
+        pattern = str(args.get("pattern") or "")
+        return f"Grep {pattern}".rstrip()
+    if name == "Create":
+        path = str(args.get("path") or "")
+        return f"Create {path}".rstrip()
     return name
 
 

@@ -1,12 +1,21 @@
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
-from ai_chat_export.catalog import filter_workspace, format_datetime, load_catalog
+from ai_chat_export.catalog import (
+    SESSION_SOURCES,
+    Chat,
+    column_label,
+    filter_workspace,
+    format_datetime,
+    format_timestamp,
+    load_catalog,
+)
 from ai_chat_export.ide import load_sessions
 from tests.support import write_chat
 
@@ -264,6 +273,194 @@ class CatalogTests(unittest.TestCase):
         sessions = load_sessions(self.root / "missing-chats", self.root / "projects", warnings)
         self.assertEqual(sessions, [])
         self.assertTrue(any("broken" in note for note in warnings))
+
+    def test_copilot_column_label(self):
+        self.assertEqual([item.id for item in SESSION_SOURCES], ["cli", "ide", "cp-cli"])
+        self.assertEqual(column_label("cli"), "Cu-CLI")
+        self.assertEqual(column_label("ide"), "Cu-IDE")
+        chat = Chat(
+            id="cp-1",
+            title="Map",
+            cwd="C:/work",
+            workspace_name="work",
+            updated_at_ms=0,
+            has_store=True,
+            path=Path("."),
+            source="cp-cli",
+        )
+        self.assertEqual(chat.source, "cp-cli")
+        self.assertEqual(chat.source_label, "Cp-CLI")
+
+    def test_copilot_session_joins_the_list(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="cli-chat",
+            cwd=str(self.root),
+            title="Older chat",
+            updated_ms=1_000,
+            with_store=False,
+        )
+        launch = self.root / "SoggyMapMaker"
+        moment = datetime(2026, 10, 24, 22, 30, tzinfo=timezone.utc)
+        _write_copilot(
+            self.root / "copilot",
+            session_id="cp-chat",
+            summary="River map",
+            cwd=str(launch),
+            updated_at="2026-10-24T22:30:00.000Z",
+            user_message="River map",
+        )
+        orphan = self.root / "copilot" / "session-state" / "orphan"
+        orphan.mkdir(parents=True)
+        sessions = load_sessions(
+            self.root / "chats",
+            self.root / "missing-projects",
+            copilot_root=self.root / "copilot",
+        )
+        self.assertEqual([item.id for item in sessions], ["cp-chat", "cli-chat"])
+        copilot = sessions[0]
+        self.assertEqual(copilot.source_label, "Cp-CLI")
+        self.assertEqual(copilot.title, "River map")
+        self.assertEqual(copilot.workspace_name, "SoggyMapMaker")
+        self.assertEqual(copilot.updated_label, format_timestamp(int(moment.timestamp() * 1000)))
+        self.assertEqual(filter_workspace(sessions, str(launch)), [copilot])
+        self.assertNotIn("orphan", [item.id for item in sessions])
+
+    def test_missing_copilot_root_keeps_chats(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="cli-chat",
+            cwd=str(self.root),
+            title="Kept",
+            with_store=False,
+        )
+        sessions = load_sessions(
+            self.root / "chats",
+            self.root / "missing-projects",
+            copilot_root=self.root / "missing-copilot",
+        )
+        self.assertEqual([item.id for item in sessions], ["cli-chat"])
+
+    def test_custom_copilot_root_is_the_one_that_is_read(self):
+        _write_copilot(self.root / "left", session_id="from-left", summary="Left")
+        _write_copilot(self.root / "right", session_id="from-right", summary="Right")
+        sessions = load_sessions(
+            self.root / "missing-chats",
+            self.root / "missing-projects",
+            copilot_root=self.root / "right",
+        )
+        self.assertEqual([item.id for item in sessions], ["from-right"])
+
+    def test_copilot_id_stays_beside_the_agent_chat(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="same",
+            cwd=str(self.root),
+            title="Chat copy",
+            with_store=False,
+        )
+        _write_copilot(self.root / "copilot", session_id="same", summary="Copilot copy")
+        sessions = load_sessions(
+            self.root / "chats",
+            self.root / "missing-projects",
+            copilot_root=self.root / "copilot",
+        )
+        self.assertEqual(sorted(item.source for item in sessions), ["cli", "cp-cli"])
+        copilot = next(item for item in sessions if item.source == "cp-cli")
+        self.assertEqual(copilot.source_label, "Cp-CLI")
+
+    def test_copilot_title_falls_back_to_the_user_line_then_the_id(self):
+        _write_copilot(
+            self.root / "copilot",
+            session_id="from-line",
+            summary="  ",
+            user_message="First line\nsecond",
+        )
+        _write_copilot(self.root / "copilot", session_id="from-id", summary="", user_message="  ")
+        sessions = {
+            item.id: item
+            for item in load_sessions(
+                self.root / "missing-chats",
+                copilot_root=self.root / "copilot",
+            )
+        }
+        self.assertEqual(sessions["from-line"].title, "First line")
+        self.assertIsNone(sessions["from-id"].title)
+        self.assertEqual(sessions["from-id"].display_title, "from-id")
+
+    def test_copilot_unparsed_time_and_missing_workspace(self):
+        _write_copilot(
+            self.root / "copilot",
+            session_id="loose",
+            summary="Loose",
+            cwd="",
+            updated_at="not a time",
+        )
+        sessions = load_sessions(
+            self.root / "missing-chats",
+            copilot_root=self.root / "copilot",
+        )
+        self.assertEqual(sessions[0].updated_label, "not a time")
+        self.assertEqual(sessions[0].workspace_name, "")
+        self.assertEqual(filter_workspace(sessions, str(self.root)), [])
+
+    def test_unreadable_copilot_store_is_omitted_and_named(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="cli-chat",
+            cwd=str(self.root),
+            title="Kept",
+            with_store=False,
+        )
+        bad = self.root / "bad-copilot"
+        bad.mkdir()
+        (bad / "session-store.db").write_text("not a database", encoding="utf-8")
+        warnings: list[str] = []
+        sessions = load_sessions(
+            self.root / "chats",
+            self.root / "missing-projects",
+            warnings,
+            bad,
+        )
+        self.assertEqual([item.id for item in sessions], ["cli-chat"])
+        self.assertTrue(any(note.startswith("Unreadable Copilot store:") for note in warnings))
+
+
+def _write_copilot(
+    root: Path,
+    *,
+    session_id: str,
+    summary: str = "",
+    cwd: str = "",
+    updated_at: str = "2026-01-01T00:00:00.000Z",
+    user_message: str | None = None,
+    assistant: str | None = None,
+) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    database = root / "session-store.db"
+    fresh = not database.exists()
+    connection = sqlite3.connect(database)
+    if fresh:
+        connection.execute(
+            "CREATE TABLE sessions (id TEXT, cwd TEXT, summary TEXT, updated_at TEXT)"
+        )
+        connection.execute(
+            "CREATE TABLE turns ("
+            "session_id TEXT, turn_index INTEGER, user_message TEXT, assistant_response TEXT)"
+        )
+    connection.execute(
+        "INSERT INTO sessions (id, cwd, summary, updated_at) VALUES (?, ?, ?, ?)",
+        (session_id, cwd, summary, updated_at),
+    )
+    if user_message is not None:
+        connection.execute(
+            "INSERT INTO turns (session_id, turn_index, user_message, assistant_response) "
+            "VALUES (?, ?, ?, ?)",
+            (session_id, 0, user_message, assistant),
+        )
+    connection.commit()
+    connection.close()
+    (root / "session-state" / session_id).mkdir(parents=True, exist_ok=True)
 
 
 def _user_line(query: str) -> str:

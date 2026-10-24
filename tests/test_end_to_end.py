@@ -40,6 +40,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("--projects-root", completed.stdout)
         self.assertIn("cursor-cli", completed.stdout)
         self.assertIn("cursor-ide", completed.stdout)
+        self.assertIn("copilot-cli", completed.stdout)
         readme = Path(__file__).resolve().parents[1].joinpath("README.md").read_text(encoding="utf-8")
         self.assertTrue(readme.startswith("# ai-chat-export\n"))
         self.assertIn("ai-chat-export", readme)
@@ -68,6 +69,9 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("Cursor-CLI", readme)
         self.assertIn("Cu-CLI", readme)
         self.assertIn("--source", readme)
+        self.assertIn("Copilot-CLI", readme)
+        self.assertIn("Cp-CLI", readme)
+        self.assertIn("--copilot-root", readme)
         self.assertNotIn("writes nothing", readme)
 
     def test_former_theme_names_are_rejected(self):
@@ -121,6 +125,8 @@ class EndToEndTests(unittest.TestCase):
                         str(out),
                         "--projects-root",
                         str(root / "no-projects"),
+                        "--copilot-root",
+                        str(root / "no-copilot"),
                     ]
                 )
             self.assertEqual(code, 0)

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from ai_chat_export.catalog import Chat, load_catalog, workspace_folder
+from ai_chat_export.copilot import load_copilot_catalog
 from ai_chat_export.store import Conversation
 from ai_chat_export.transcript import element_texts, query_text
 
@@ -14,15 +15,19 @@ def load_sessions(
     chats_root: Path,
     projects_root: Path | None = None,
     warnings: list[str] | None = None,
+    copilot_root: Path | None = None,
 ) -> list[Chat]:
     notes = warnings if warnings is not None else []
     chats = load_catalog(chats_root, notes)
-    if projects_root is None:
+    if projects_root is None and copilot_root is None:
         return chats
-    known = {chat.id for chat in chats}
-    merged = chats + [row for row in load_ide_catalog(projects_root, notes) if row.id not in known]
-    merged.sort(key=lambda chat: (chat.updated_at_ms, chat.id), reverse=True)
-    return merged
+    if projects_root is not None:
+        known = {chat.id for chat in chats}
+        chats = chats + [row for row in load_ide_catalog(projects_root, notes) if row.id not in known]
+    if copilot_root is not None:
+        chats = chats + load_copilot_catalog(copilot_root, notes)
+    chats.sort(key=lambda chat: (chat.updated_at_ms, chat.id), reverse=True)
+    return chats
 
 
 def load_ide_conversation(directory: Path) -> tuple[Conversation, list[str]]:

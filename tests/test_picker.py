@@ -441,15 +441,21 @@ class PickerTests(unittest.TestCase):
         termios.tcsetattr.assert_called_once_with(sys.stdin.fileno(), 1, ["saved-attributes"])
 
     def test_source_key_cycles_and_composes_with_workspace(self):
-        _, frames = self._frames(["s", "s", "S"])
+        _, frames = self._frames(["s", "s", "s", "S"])
         self.assertIn("s source", frames[0])
         self.assertIn("i id", frames[0])
         self.assertIn("Enter names the file", frames[0])
+        self.assertIn("Copilot-CLI", frames[0])
         self.assertIn("All sources *", frames[0])
         self.assertIn("Cursor-CLI *", frames[1])
         self.assertNotIn("All sources *", frames[1])
         self.assertIn("Cursor-IDE *", frames[2])
-        self.assertIn("All sources *", frames[3])
+        self.assertIn("Copilot-CLI *", frames[3])
+        self.assertIn("All sources *", frames[4])
+
+        _, flagged = self._frames(["s"], sources={"cli"})
+        self.assertIn("Cursor-CLI *", flagged[0])
+        self.assertIn("Cursor-IDE *", flagged[-1])
 
         _, shifted = self._frames(["down", "s"])
         self.assertIn("> Fantasy Map Maker", shifted[-1])
@@ -499,6 +505,33 @@ class PickerTests(unittest.TestCase):
         self.assertIn("> Map", mixed[-1])
         self.assertNotIn("River", mixed[-1])
         self.assertNotIn("Bench", mixed[-1])
+
+        copilot = Chat(
+            id="cp-here",
+            title="Copilot row",
+            cwd=str(self.launch),
+            workspace_name="SoggyMapMaker",
+            updated_at_ms=int(datetime(2026, 6, 1, 9, 5).timestamp() * 1000),
+            has_store=True,
+            path=self.launch,
+            source="cp-cli",
+        )
+        subset: list[str] = []
+        run_picker(
+            [ide, cli, copilot],
+            "terminal-dark",
+            ["s"],
+            str(self.launch),
+            subset.append,
+            width=80,
+            sources={"cli", "ide"},
+        )
+        self.assertIn("Cursor-CLI *", subset[0])
+        self.assertIn("Cursor-IDE *", subset[0])
+        self.assertNotIn("All sources *", subset[0])
+        self.assertNotIn("Copilot-CLI *", subset[0])
+        self.assertNotIn("Copilot row", subset[0])
+        self.assertIn("All sources *", subset[-1])
 
         typed, named = self._frames(["enter", "s", "down"])
         self.assertIsNone(typed.chat_id)

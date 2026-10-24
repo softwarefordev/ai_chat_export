@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -75,6 +76,8 @@ class ExportTests(unittest.TestCase):
                         str(self.chats),
                         "--projects-root",
                         str(self.root / "no-projects"),
+                        "--copilot-root",
+                        str(self.root / "no-copilot"),
                     ]
                 )
         finally:
@@ -209,6 +212,8 @@ class ExportTests(unittest.TestCase):
                     "--markdown",
                     "--projects-root",
                     str(self.root / "no-projects"),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
                 ]
             )
         self.assertEqual(cli, 0)
@@ -290,6 +295,8 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "from-id.html"),
                     "--projects-root",
                     str(self.root / "no-projects"),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
                 ]
             )
         self.assertEqual(cli, 0)
@@ -648,6 +655,8 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "missing-chats"),
                     "--projects-root",
                     str(self.root / "projects"),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
                     "--out",
                     str(self.out),
                 ]
@@ -730,6 +739,8 @@ class ExportTests(unittest.TestCase):
                         str(self.chats),
                         "--projects-root",
                         str(self.root / "projects"),
+                        "--copilot-root",
+                        str(self.root / "no-copilot"),
                         "--out",
                         str(unknown),
                     ]
@@ -751,6 +762,8 @@ class ExportTests(unittest.TestCase):
                     str(self.chats),
                     "--projects-root",
                     str(self.root / "projects"),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
                     "--out",
                     str(self.out),
                 ]
@@ -772,6 +785,8 @@ class ExportTests(unittest.TestCase):
                     str(self.chats),
                     "--projects-root",
                     str(self.root / "projects"),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
                     "--out",
                     str(rejected),
                 ]
@@ -814,6 +829,8 @@ class ExportTests(unittest.TestCase):
                     str(self.chats),
                     "--projects-root",
                     str(self.root / "projects"),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
                     "--out",
                     str(self.out),
                 ]
@@ -840,17 +857,419 @@ class ExportTests(unittest.TestCase):
                     str(self.chats),
                     "--projects-root",
                     str(self.root / "projects"),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
                     "--out",
                     str(self.out),
                 ]
             )
         self.assertEqual(code, 0)
-        self.assertIsNone(calls[1]["sources"])
+        self.assertEqual(calls[1]["sources"], {"cli", "ide"})
         self.assertIn("cli", calls[1]["kinds"])
         self.assertIn("ide", calls[1]["kinds"])
+        self.assertIn("Cursor-CLI *", calls[1]["frames"][0])
+        self.assertIn("Cursor-IDE *", calls[1]["frames"][0])
+        self.assertNotIn("All sources *", calls[1]["frames"][0])
         self.assertIn("Fantasy Map Maker", calls[1]["frames"][0])
         self.assertIn("River map", calls[1]["frames"][0])
-        self.assertIn("All sources *", calls[1]["frames"][0])
+        self.assertIn("All sources *", calls[1]["frames"][-1])
+
+    def test_copilot_source_flag_opens_the_picker_and_excludes_the_id(self):
+        root = self.root / "copilot"
+        _write_copilot_session(
+            root,
+            session_id="cp-1",
+            summary="Harbor notes",
+            cwd=str(self.root),
+            turns=[("Map the harbor.", "The harbor is mapped.")],
+        )
+        self.chats.mkdir()
+        projects = self.root / "projects"
+        projects.mkdir()
+        unknown = self.root / "unknown-out"
+        unknown.mkdir()
+        stderr = io.StringIO()
+        with (
+            mock.patch("ai_chat_export.__main__.load_sessions") as load,
+            contextlib.redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as raised:
+                main(
+                    [
+                        "--source",
+                        "other",
+                        "--id",
+                        "cp-1",
+                        "--chats-root",
+                        str(self.chats),
+                        "--projects-root",
+                        str(projects),
+                        "--copilot-root",
+                        str(root),
+                        "--out",
+                        str(unknown),
+                    ]
+                )
+        self.assertNotEqual(raised.exception.code, 0)
+        load.assert_not_called()
+        self.assertNotIn("Chat not found", stderr.getvalue())
+        self.assertEqual(list(unknown.iterdir()), [])
+
+        calls: list[dict] = []
+
+        def fake(chats, theme, keys, launch, write, **kwargs):
+            frames: list[str] = []
+            result = run_picker(
+                chats,
+                theme,
+                ["s"],
+                launch,
+                frames.append,
+                width=80,
+                sources=kwargs.get("sources"),
+            )
+            calls.append({"sources": kwargs.get("sources"), "frames": frames})
+            return result
+
+        with (
+            mock.patch("ai_chat_export.__main__.run_picker", side_effect=fake),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            code = main(
+                [
+                    "--source",
+                    "copilot-cli",
+                    "--chats-root",
+                    str(self.chats),
+                    "--projects-root",
+                    str(projects),
+                    "--copilot-root",
+                    str(root),
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0]["sources"], {"cp-cli"})
+        self.assertIn("Copilot-CLI *", calls[0]["frames"][0])
+        self.assertIn("Harbor notes", calls[0]["frames"][0])
+
+        rejected = self.root / "rejected"
+        rejected.mkdir()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = main(
+                [
+                    "--id",
+                    "cp-1",
+                    "--source",
+                    "cursor-cli",
+                    "--chats-root",
+                    str(self.chats),
+                    "--projects-root",
+                    str(projects),
+                    "--copilot-root",
+                    str(root),
+                    "--out",
+                    str(rejected),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("Chat not found", stderr.getvalue())
+        self.assertEqual(list(rejected.iterdir()), [])
+
+    def test_copilot_id_writes_the_turn_text(self):
+        root = self.root / "copilot"
+        _write_copilot_session(
+            root,
+            session_id="cp-1",
+            summary="River map",
+            events=[
+                {"type": "system.message", "data": {"content": "SYSTEM-ONLY"}},
+                {"type": "user.message", "data": {"content": "Please add a river."}},
+                {
+                    "type": "assistant.message",
+                    "data": {
+                        "content": "",
+                        "reasoningText": "REASON-ONLY",
+                        "encryptedContent": "SECRET-ENCRYPTED",
+                    },
+                },
+                {"type": "assistant.message", "data": {"content": "The map is ready."}},
+                {"type": "user.message", "data": {"content": "Add a lake."}},
+                {"type": "assistant.message", "data": {"content": "The lake is marked."}},
+            ],
+            turns=[("ONLY-IN-TURNS", "ONLY-IN-TURNS-REPLY")],
+            index="INDEX-MARKER",
+        )
+        before = _copilot_bytes(root, "cp-1")
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            projects_root=self.root / "missing-projects",
+            copilot_root=root,
+            chat_id="cp-1",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+        )
+        page = (self.out / "River map.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn("Please add a river.", page)
+        self.assertIn("The map is ready.", page)
+        self.assertIn("Add a lake.", page)
+        self.assertIn("The lake is marked.", page)
+        self.assertEqual(page.count(">Agent<"), 2)
+        self.assertNotIn("ONLY-IN-TURNS", page)
+        self.assertNotIn("SYSTEM-ONLY", page)
+        self.assertNotIn("REASON-ONLY", page)
+        self.assertNotIn("SECRET-ENCRYPTED", page)
+        self.assertNotIn("INDEX-MARKER", page)
+        self.assertNotIn("Cp-CLI", page)
+        self.assertNotIn("CLI", page)
+        self.assertNotIn("http", page.lower())
+        self.assertEqual(before, _copilot_bytes(root, "cp-1"))
+        markdown_out = self.root / "markdown-out"
+        markdown_out.mkdir()
+        md_code = export_session(
+            chats_root=self.root / "missing-chats",
+            copilot_root=root,
+            chat_id="cp-1",
+            out_dir=markdown_out,
+            write_markdown=True,
+            stdout=io.StringIO(),
+        )
+        markdown = (markdown_out / "River map.md").read_text(encoding="utf-8")
+        self.assertEqual(md_code, 0)
+        self.assertIn("Please add a river.", markdown)
+        self.assertIn("The map is ready.", markdown)
+
+    def test_copilot_empty_assistant_has_no_agent_heading(self):
+        root = self.root / "copilot"
+        _write_copilot_session(
+            root,
+            session_id="cp-empty-agent",
+            summary="Note",
+            events=[
+                {"type": "user.message", "data": {"content": "Just a note."}},
+                {"type": "assistant.message", "data": {"content": ""}},
+            ],
+        )
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            copilot_root=root,
+            chat_id="cp-empty-agent",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+        )
+        page = (self.out / "Note.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn("Just a note.", page)
+        self.assertNotIn(">Agent<", page)
+
+    def test_copilot_session_with_no_turns_writes_no_file(self):
+        root = self.root / "copilot"
+        _write_copilot_session(root, session_id="cp-blank", summary="Blank")
+        stderr = io.StringIO()
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            copilot_root=root,
+            chat_id="cp-blank",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+            stderr=stderr,
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("Chat has no transcript: cp-blank", stderr.getvalue())
+        self.assertEqual(list(self.out.iterdir()), [])
+
+    def test_copilot_missing_event_log_uses_turns(self):
+        root = self.root / "copilot"
+        _write_copilot_session(
+            root,
+            session_id="cp-turns",
+            summary="From turns",
+            turns=[("Please add a river.", "The map is ready.")],
+        )
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            copilot_root=root,
+            chat_id="cp-turns",
+            out_dir=self.out,
+            show_tools=True,
+            stdout=io.StringIO(),
+        )
+        page = (self.out / "From turns.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn("Please add a river.", page)
+        self.assertIn("The map is ready.", page)
+        self.assertNotIn("Read ", page)
+
+    def test_unreadable_copilot_events_fall_back_to_turns(self):
+        root = self.root / "copilot"
+        folder = _write_copilot_session(
+            root,
+            session_id="cp-bad-log",
+            summary="Recovered",
+            turns=[("Please add a river.", "The map is ready.")],
+        )
+        (folder / "events.jsonl").write_bytes(b"\xff")
+        stderr = io.StringIO()
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            copilot_root=root,
+            chat_id="cp-bad-log",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+            stderr=stderr,
+        )
+        page = (self.out / "Recovered.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn("Unreadable Copilot events cp-bad-log:", stderr.getvalue())
+        self.assertIn("Please add a river.", page)
+        self.assertIn("The map is ready.", page)
+
+    def test_copilot_tools_and_verbose_detail(self):
+        root = self.root / "copilot"
+        events = [
+            {"type": "system.message", "data": {"content": "SYSTEM-ONLY"}},
+            {"type": "user.message", "data": {"content": "Please add a river."}},
+            {
+                "type": "assistant.message",
+                "data": {
+                    "content": "",
+                    "reasoningText": "REASON-ONLY",
+                    "encryptedContent": "SECRET-ENCRYPTED",
+                },
+            },
+            {
+                "type": "tool.execution_start",
+                "data": {"toolName": "view", "arguments": {"path": "maps/river.txt"}},
+            },
+            {
+                "type": "tool.execution_complete",
+                "data": {"result": "TOOL-RESULT-SECRET"},
+            },
+            {
+                "type": "tool.execution_start",
+                "data": {"toolName": "glob", "arguments": {"pattern": "**/*.map"}},
+            },
+            {
+                "type": "tool.execution_start",
+                "data": {
+                    "toolName": "powershell",
+                    "arguments": {
+                        "description": "List the map files",
+                        "command": "secret-command-text",
+                    },
+                },
+            },
+            {
+                "type": "tool.execution_start",
+                "data": {"toolName": "grep", "arguments": {"pattern": "river"}},
+            },
+            {
+                "type": "tool.execution_start",
+                "data": {"toolName": "create", "arguments": {"path": "maps/lake.txt"}},
+            },
+            {"type": "assistant.message", "data": {"content": "The map is ready."}},
+        ]
+        _write_copilot_session(root, session_id="cp-tools", summary="Tools", events=events)
+        tools_out = self.root / "tools-out"
+        tools_out.mkdir()
+        tools_code = export_session(
+            chats_root=self.root / "missing-chats",
+            copilot_root=root,
+            chat_id="cp-tools",
+            out_dir=tools_out,
+            show_tools=True,
+            stdout=io.StringIO(),
+        )
+        tools_page = (tools_out / "Tools.html").read_text(encoding="utf-8")
+        self.assertEqual(tools_code, 0)
+        self.assertIn("Read maps/river.txt", tools_page)
+        self.assertIn("Glob **/*.map", tools_page)
+        self.assertIn("Ran List the map files", tools_page)
+        self.assertIn("Grep river", tools_page)
+        self.assertIn("Create maps/lake.txt", tools_page)
+        self.assertNotIn("TOOL-RESULT-SECRET", tools_page)
+        self.assertNotIn("secret-command-text", tools_page)
+        self.assertNotIn("REASON-ONLY", tools_page)
+        self.assertNotIn("SYSTEM-ONLY", tools_page)
+        self.assertNotIn("SECRET-ENCRYPTED", tools_page)
+        verbose_out = self.root / "verbose-out"
+        verbose_out.mkdir()
+        verbose_code = export_session(
+            chats_root=self.root / "missing-chats",
+            copilot_root=root,
+            chat_id="cp-tools",
+            out_dir=verbose_out,
+            verbose=True,
+            stdout=io.StringIO(),
+        )
+        verbose_page = (verbose_out / "Tools.html").read_text(encoding="utf-8")
+        self.assertEqual(verbose_code, 0)
+        self.assertIn("Read maps/river.txt", verbose_page)
+        self.assertIn("REASON-ONLY", verbose_page)
+        self.assertIn("TOOL-RESULT-SECRET", verbose_page)
+        self.assertIn("SYSTEM-ONLY", verbose_page)
+        self.assertNotIn("SECRET-ENCRYPTED", verbose_page)
+        self.assertNotIn("secret-command-text", verbose_page)
+
+
+def _write_copilot_session(
+    root: Path,
+    *,
+    session_id: str,
+    summary: str,
+    cwd: str = "",
+    events: list[dict] | None = None,
+    turns: list[tuple[str, str | None]] | None = None,
+    index: str | None = None,
+) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    database = root / "session-store.db"
+    connection = sqlite3.connect(database)
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS sessions (id TEXT, cwd TEXT, summary TEXT, updated_at TEXT)"
+    )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS turns ("
+        "session_id TEXT, turn_index INTEGER, user_message TEXT, assistant_response TEXT)"
+    )
+    connection.execute(
+        "INSERT INTO sessions (id, cwd, summary, updated_at) VALUES (?, ?, ?, ?)",
+        (session_id, cwd, summary, "2026-10-24T22:30:00.000Z"),
+    )
+    for index_no, (user_message, assistant) in enumerate(turns or []):
+        connection.execute(
+            "INSERT INTO turns (session_id, turn_index, user_message, assistant_response) "
+            "VALUES (?, ?, ?, ?)",
+            (session_id, index_no, user_message, assistant),
+        )
+    connection.commit()
+    connection.close()
+    folder = root / "session-state" / session_id
+    folder.mkdir(parents=True, exist_ok=True)
+    if events is not None:
+        (folder / "events.jsonl").write_text(
+            "\n".join(json.dumps(event) for event in events) + "\n",
+            encoding="utf-8",
+        )
+    if index is not None:
+        checkpoint = folder / "checkpoints"
+        checkpoint.mkdir()
+        (checkpoint / "index.md").write_text(index, encoding="utf-8")
+    return folder
+
+
+def _copilot_bytes(root: Path, session_id: str) -> tuple[bytes, bytes, bytes]:
+    folder = root / "session-state" / session_id
+    index = folder / "checkpoints" / "index.md"
+    events = folder / "events.jsonl"
+    return (
+        (root / "session-store.db").read_bytes(),
+        events.read_bytes() if events.is_file() else b"",
+        index.read_bytes() if index.is_file() else b"",
+    )
 
 
 def _write_export_transcript(
