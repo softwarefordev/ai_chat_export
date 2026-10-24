@@ -67,7 +67,10 @@ class activity:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ai-chat-export",
-        description="Export a Cursor agent session to HTML. Pass --markdown to also write Markdown.",
+        description=(
+            "Export a Cursor agent session to HTML. Pass --markdown to write Markdown instead. "
+            "In the picker, Enter asks for a file name. The title file name is the default."
+        ),
     )
     parser.add_argument("--id", dest="chat_id", help="Chat id to export. Omit to open the picker.")
     parser.add_argument(
@@ -94,15 +97,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--markdown",
         action="store_true",
-        help="Also write a Markdown file beside the HTML page.",
+        help="Write a Markdown file instead of the HTML page.",
     )
     parser.add_argument("--out", type=Path, help="Directory for the export files.")
+    parser.add_argument(
+        "--name",
+        type=Path,
+        help="File path to write when --id is set, including the directory and extension. Replaces --out. Requires --id.",
+    )
     parser.add_argument(
         "--chats-root",
         type=Path,
         help="Catalog root. Defaults to ~/.cursor/chats.",
     )
     args = parser.parse_args(argv)
+    if args.name is not None and not args.chat_id:
+        print("`--name` requires `--id`.", file=sys.stderr)
+        return 1
+    if args.name is not None and args.out is not None:
+        print("Pass either --name or --out.", file=sys.stderr)
+        return 1
     chats_root = args.chats_root or (Path.home() / ".cursor" / "chats")
     out_dir = args.out or Path.cwd()
     if args.chat_id:
@@ -115,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             show_tools=args.tools,
             show_detail=args.detail,
             write_markdown=args.markdown,
+            output_path=args.name,
         )
     warnings: list[str] = []
     chats = load_catalog(chats_root, warnings)
@@ -140,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
                 keys(),
                 str(Path.cwd()),
                 write,
+                extension=".md" if args.markdown else ".html",
             )
         except KeyboardInterrupt:
             return 130
@@ -154,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
             show_tools=args.tools,
             show_detail=args.detail,
             write_markdown=args.markdown,
+            file_name=result.file_name,
         )
 
     state: dict[str, object] = {"saved": None}
@@ -186,7 +203,14 @@ def export_with_picker(
     def body():
         try:
             frames: list[str] = []
-            result = run_picker(chats, theme, keys, launch_dir, frames.append)
+            result = run_picker(
+                chats,
+                theme,
+                keys,
+                launch_dir,
+                frames.append,
+                extension=".md" if write_markdown else ".html",
+            )
             stdout.write("".join(frames))
         except KeyboardInterrupt:
             return 130
@@ -201,6 +225,7 @@ def export_with_picker(
             show_tools=show_tools,
             show_detail=show_detail,
             write_markdown=write_markdown,
+            file_name=result.file_name,
             stdout=stdout,
         )
 
@@ -217,12 +242,19 @@ def export_session(
     show_tools: bool = False,
     show_detail: bool = False,
     write_markdown: bool = False,
+    file_name: str | None = None,
+    output_path: Path | None = None,
     stdout=None,
     stderr=None,
     activity_interval: float = 0.2,
 ) -> int:
     output = stdout or sys.stdout
     error = stderr or sys.stderr
+    if output_path is not None:
+        named_error = _named_output_error(output_path)
+        if named_error is not None:
+            print(named_error, file=error)
+            return 1
     warnings: list[str] = []
     with activity(error, activity_interval):
         chats = load_catalog(chats_root, warnings)
@@ -255,33 +287,52 @@ def export_session(
                         skipped=conversation.skipped,
                         unlinked_images=conversation.unlinked_images,
                     )
-                    stem = safe_stem(chat.title, chat.id)
-                    html_path = out_dir / f"{stem}.html"
-                    md_path = out_dir / f"{stem}.md"
-                    out_dir.mkdir(parents=True, exist_ok=True)
                     document = {
                         "title": chat.display_title,
                         "workspace": chat.workspace_name,
                         "timestamp": chat.updated_label,
                     }
-                    html_path.write_text(
-                        render_html(transcript, theme=theme, **document),
-                        encoding="utf-8",
-                    )
+                    if output_path is not None:
+                        target = output_path
+                    else:
+                        if file_name:
+                            stem_name = file_name
+                        else:
+                            suffix = ".md" if write_markdown else ".html"
+                            stem_name = f"{safe_stem(chat.title, chat.id)}{suffix}"
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        target = out_dir / stem_name
+                    target.parent.mkdir(parents=True, exist_ok=True)
                     if write_markdown:
+                        md_path = target
                         md_path.write_text(
                             render_markdown(transcript, **document),
+                            encoding="utf-8",
+                        )
+                    else:
+                        html_path = target
+                        html_path.write_text(
+                            render_html(transcript, theme=theme, **document),
                             encoding="utf-8",
                         )
     if failure is not None:
         print(failure, file=error)
         return 1
-    assert html_path is not None
-    print(html_path.resolve(), file=output)
     if write_markdown:
         assert md_path is not None
         print(md_path.resolve(), file=output)
+    else:
+        assert html_path is not None
+        print(html_path.resolve(), file=output)
     return 0
+
+
+def _named_output_error(path: Path) -> str | None:
+    if not path.name or path.name in {".", ".."}:
+        return f"Output path has no file name: {path}"
+    if path.exists() and path.is_dir():
+        return f"Output path is a directory: {path}"
+    return None
 
 
 def safe_stem(title: str | None, chat_id: str) -> str:

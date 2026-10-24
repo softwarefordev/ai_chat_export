@@ -28,6 +28,9 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("--tools", completed.stdout)
         self.assertIn("--detail", completed.stdout)
         self.assertIn("--markdown", completed.stdout)
+        self.assertIn("--name", completed.stdout)
+        self.assertIn("asks for a file name", completed.stdout)
+        self.assertIn("when --id is set", completed.stdout)
         readme = Path(__file__).resolve().parents[1].joinpath("README.md").read_text(encoding="utf-8")
         self.assertTrue(readme.startswith("# ai-chat-export\n"))
         self.assertIn("ai-chat-export", readme)
@@ -44,7 +47,10 @@ class EndToEndTests(unittest.TestCase):
             "The HTML page lists user turns, and each entry jumps to that turn.",
             readme,
         )
-        self.assertIn("`--markdown` also writes a Markdown file", readme)
+        self.assertIn("`--markdown` writes the Markdown file", readme)
+        self.assertIn("`--name` writes that file path", readme)
+        self.assertIn("Enter asks for a file name.", readme)
+        self.assertIn("`--name` requires `--id`.", readme)
         self.assertNotIn("writes nothing", readme)
 
     def test_id_export_of_synthetic_fixture(self):

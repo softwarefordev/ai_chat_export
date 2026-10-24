@@ -160,7 +160,7 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(md_path.read_text(encoding="utf-8"), "OLD_MD")
         self.assertEqual(neighbor.read_text(encoding="utf-8"), "keep-me")
 
-    def test_markdown_flag_writes_and_replaces_both_files(self):
+    def test_markdown_flag_writes_markdown_and_leaves_html(self):
         self._chat()
         html_path = self.out / "Fantasy Map Maker.html"
         md_path = self.out / "Fantasy Map Maker.md"
@@ -176,8 +176,9 @@ class ExportTests(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         printed = stdout.getvalue()
-        self.assertIn(str(html_path.resolve()), printed)
+        self.assertNotIn(str(html_path.resolve()), printed)
         self.assertIn(str(md_path.resolve()), printed)
+        self.assertEqual(html_path.read_text(encoding="utf-8"), "OLD_HTML")
         markdown = md_path.read_text(encoding="utf-8")
         self.assertIn("Please add a river tool.", markdown)
         self.assertIn("The river tool lives in tools/river.py.", markdown)
@@ -198,6 +199,131 @@ class ExportTests(unittest.TestCase):
             )
         self.assertEqual(cli, 0)
         self.assertTrue((self.out / "cli" / "Fantasy Map Maker.md").is_file())
+        self.assertFalse((self.out / "cli" / "Fantasy Map Maker.html").exists())
+
+    def test_name_writes_that_path_and_skips_the_title(self):
+        self._chat()
+        target = self.root / "nested" / "deep" / "page.html"
+        stdout = io.StringIO()
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="chat-1",
+            out_dir=self.out,
+            output_path=target,
+            stdout=stdout,
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(target.is_file())
+        self.assertIn(str(target.resolve()), stdout.getvalue())
+        self.assertIn("Please add a river tool.", target.read_text(encoding="utf-8"))
+        self.assertFalse((self.out / "Fantasy Map Maker.html").exists())
+        self.assertFalse(target.with_suffix(".md").exists())
+
+        markdown = self.root / "notes.md"
+        markdown.write_text("OLD", encoding="utf-8")
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="chat-1",
+            out_dir=self.out,
+            output_path=markdown,
+            write_markdown=True,
+            stdout=io.StringIO(),
+        )
+        self.assertEqual(code, 0)
+        text = markdown.read_text(encoding="utf-8")
+        self.assertNotIn("OLD", text)
+        self.assertIn("Please add a river tool.", text)
+        self.assertFalse((self.out / "Fantasy Map Maker.md").exists())
+        self.assertFalse((self.root / "notes.html").exists())
+
+        previous = Path.cwd()
+        os.chdir(self.root)
+        try:
+            code = export_session(
+                chats_root=self.chats,
+                chat_id="chat-1",
+                out_dir=self.out,
+                output_path=Path("relative.html"),
+                stdout=io.StringIO(),
+            )
+        finally:
+            os.chdir(previous)
+        self.assertEqual(code, 0)
+        self.assertTrue((self.root / "relative.html").is_file())
+
+        folder = self.root / "already"
+        folder.mkdir()
+        stderr = io.StringIO()
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="chat-1",
+            out_dir=self.out,
+            output_path=folder,
+            stderr=stderr,
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("directory", stderr.getvalue())
+        self.assertFalse((self.out / "Fantasy Map Maker.html").exists())
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            cli = main(
+                [
+                    "--id",
+                    "chat-1",
+                    "--chats-root",
+                    str(self.chats),
+                    "--name",
+                    str(self.root / "from-id.html"),
+                ]
+            )
+        self.assertEqual(cli, 0)
+        self.assertTrue((self.root / "from-id.html").is_file())
+        self.assertFalse((self.out / "Fantasy Map Maker.html").exists())
+
+    def test_name_with_out_writes_nothing(self):
+        self._chat()
+        target = self.root / "blocked.html"
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = main(
+                [
+                    "--id",
+                    "chat-1",
+                    "--chats-root",
+                    str(self.root / "missing-catalog"),
+                    "--name",
+                    str(target),
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("--name", stderr.getvalue())
+        self.assertNotIn("Chat not found", stderr.getvalue())
+        self.assertFalse(target.exists())
+        self.assertFalse((self.out / "Fantasy Map Maker.html").exists())
+
+    def test_name_without_id_writes_no_file(self):
+        self._chat()
+        target = self.root / "picker-name.html"
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = main(
+                [
+                    "--chats-root",
+                    str(self.root / "missing-catalog"),
+                    "--name",
+                    str(target),
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("`--name` requires `--id`.", stderr.getvalue())
+        self.assertNotIn("Pass either --name or --out.", stderr.getvalue())
+        self.assertNotIn("Chat not found", stderr.getvalue())
+        self.assertFalse(target.exists())
+        self.assertFalse((self.out / "Fantasy Map Maker.html").exists())
 
     def test_html_only_target_and_neighbor_file(self):
         self._chat()
@@ -309,42 +435,43 @@ class ExportTests(unittest.TestCase):
             prompts=[query],
         )
         plain = self.out / "plain"
+        plain_md = self.out / "plain-md"
         detail = self.out / "detail"
-        self.assertEqual(
-            export_session(
-                chats_root=self.chats,
-                chat_id="wrapped",
-                out_dir=plain,
-                write_markdown=True,
-                stdout=io.StringIO(),
-            ),
-            0,
+        detail_md = self.out / "detail-md"
+        exports = (
+            (plain, False, False),
+            (plain_md, False, True),
+            (detail, True, False),
+            (detail_md, True, True),
         )
-        self.assertEqual(
-            export_session(
-                chats_root=self.chats,
-                chat_id="wrapped",
-                out_dir=detail,
-                show_detail=True,
-                write_markdown=True,
-                stdout=io.StringIO(),
-            ),
-            0,
-        )
+        for folder, show_detail, markdown in exports:
+            self.assertEqual(
+                export_session(
+                    chats_root=self.chats,
+                    chat_id="wrapped",
+                    out_dir=folder,
+                    show_detail=show_detail,
+                    write_markdown=markdown,
+                    stdout=io.StringIO(),
+                ),
+                0,
+            )
         turn = "Oct 23, 2026 11:13 AM"
         header = format_timestamp(1_000)
-        for folder, expect_command in ((plain, False), (detail, True)):
-            for name in ("Wrapped.html", "Wrapped.md"):
-                document = (folder / name).read_text(encoding="utf-8")
-                self.assertIn(query, document)
-                self.assertIn(turn, document)
-                self.assertIn(header, document)
-                self.assertNotIn("<user_query>", document)
-                self.assertNotIn("INJECTED_CONTEXT_BLOCK", document)
-                if expect_command:
-                    self.assertEqual(document.count(command), 1)
-                else:
-                    self.assertNotIn(command, document)
+        for folder, expect_command, markdown in exports:
+            name = "Wrapped.md" if markdown else "Wrapped.html"
+            other = "Wrapped.html" if markdown else "Wrapped.md"
+            self.assertFalse((folder / other).exists())
+            document = (folder / name).read_text(encoding="utf-8")
+            self.assertIn(query, document)
+            self.assertIn(turn, document)
+            self.assertIn(header, document)
+            self.assertNotIn("<user_query>", document)
+            self.assertNotIn("INJECTED_CONTEXT_BLOCK", document)
+            if expect_command:
+                self.assertEqual(document.count(command), 1)
+            else:
+                self.assertNotIn(command, document)
 
     def test_terminal_shows_dots_before_the_path_and_a_pipe_stays_quiet(self):
         self._chat()

@@ -1,6 +1,6 @@
 # ai-chat-export
 
-Export a local Cursor agent chat to an HTML page. The page follows the chat: the prompt you typed, then the assistant's visible text. The user section is labeled User. Consecutive assistant replies share one Agent heading until the next prompt. The HTML page lists user turns, and each entry jumps to that turn. HTML is the default. `--markdown` also writes a Markdown file beside that page.
+Export a local Cursor agent chat to an HTML page. The page follows the chat: the prompt you typed, then the assistant's visible text. The user section is labeled User. Consecutive assistant replies share one Agent heading until the next prompt. The HTML page lists user turns, and each entry jumps to that turn. HTML is the default. `--markdown` writes the Markdown file instead of the HTML page.
 
 HTML is dark unless you ask for light. A user turn shows the query only. `--detail` adds the conversation summary and Cursor command blocks after that query. `--tools` adds one caption per tool call. `--verbose` adds those captions plus system text, injected context, reasoning, and raw tool output. `--verbose` does not add the summary or command blocks.
 
@@ -17,7 +17,7 @@ Open the picker for chats under `~/.cursor/chats`:
 ai-chat-export
 ```
 
-The list shows the title, workspace, and time in aligned columns. Up and down move. Left and right switch `All chats` and `This workspace`. Enter writes the files. Esc closes. The footer shows the theme that will be written. `i` shows the selected chat id.
+The list shows the title, workspace, and time in aligned columns. Up and down move. Left and right switch `All chats` and `This workspace`. Enter asks for a file name. The line starts as the title file name. Enter on that line writes the file. Esc on the name line returns to the list. Esc on the list closes. The footer shows the theme that will be written. `i` shows the selected chat id.
 
 Export one chat without the picker:
 
@@ -28,8 +28,9 @@ ai-chat-export --id <chat-id> --tools
 ai-chat-export --id <chat-id> --verbose
 ai-chat-export --id <chat-id> --detail
 ai-chat-export --id <chat-id> --markdown
+ai-chat-export --id <chat-id> --name ./exports/session.html
 ```
 
-`--chats-root` points at a different catalog directory. Files are named from the chat title. An existing HTML file is replaced. `--markdown` also replaces an existing Markdown file.
+`--chats-root` points at a different catalog directory. Files are named from the chat title. An existing HTML file is replaced. `--markdown` replaces an existing Markdown file and leaves an existing HTML file unchanged. `--name` writes that file path instead. `--name` requires `--id`. Passing `--name` with `--out` is an error.
 
 The tool only reads the chat store. It does not delete chats or call Cursor.

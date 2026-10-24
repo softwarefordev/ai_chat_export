@@ -57,10 +57,16 @@ class PickerTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _frames(self, keys, theme="dark", width=80):
+    def _frames(self, keys, theme="dark", width=80, extension=".html"):
         frames: list[str] = []
         result = run_picker(
-            self.chats, theme, keys, str(self.launch), frames.append, width=width
+            self.chats,
+            theme,
+            keys,
+            str(self.launch),
+            frames.append,
+            width=width,
+            extension=extension,
         )
         return result, frames
 
@@ -95,14 +101,20 @@ class PickerTests(unittest.TestCase):
 
     def test_movement_scope_enter_esc_and_backspace(self):
         result, frames = self._frames(["down", "up", "enter"])
+        self.assertIsNone(result.chat_id)
+        self.assertIn("Fantasy Map Maker.html", frames[-1])
+        self.assertIn("Enter names the file", frames[0])
+
+        result, frames = self._frames(["down", "up", "enter", "enter"])
         self.assertEqual(result.chat_id, "here")
-        self.assertFalse(result.delete_requested)
-        self.assertIn("> Fantasy Map Maker", frames[-1])
-        self.assertIn("theme: dark", frames[-1])
+        self.assertEqual(result.file_name, "Fantasy Map Maker.html")
 
         result, frames = self._frames(["down", "enter"])
-        self.assertEqual(result.chat_id, "there")
-        self.assertIn("> Apply Opsx", frames[-1])
+        self.assertIsNone(result.chat_id)
+        self.assertIn("Apply Opsx.html", frames[-1])
+
+        result, frames = self._frames(["down", "enter"], extension=".md")
+        self.assertIn("Apply Opsx.md", frames[-1])
 
         result, frames = self._frames(["right"])
         self.assertIsNone(result.chat_id)
@@ -151,7 +163,7 @@ class PickerTests(unittest.TestCase):
         code = export_with_picker(
             self.chats,
             theme="dark",
-            keys=["enter"],
+            keys=["enter", "enter"],
             launch_dir=str(self.launch),
             out_dir=out,
             verbose=False,
@@ -173,7 +185,7 @@ class PickerTests(unittest.TestCase):
         code = export_with_picker(
             self.chats,
             theme="dark",
-            keys=["enter"],
+            keys=["enter", "enter"],
             launch_dir=str(self.launch),
             out_dir=marked,
             verbose=False,
@@ -186,7 +198,9 @@ class PickerTests(unittest.TestCase):
         md_path = marked / "Fantasy Map Maker.md"
         self.assertEqual(code, 0)
         self.assertTrue(md_path.is_file())
+        self.assertFalse((marked / "Fantasy Map Maker.html").exists())
         self.assertIn(str(md_path.resolve()), stdout.getvalue())
+        self.assertNotIn("Fantasy Map Maker.html", stdout.getvalue())
 
         empty = self.root / "empty"
         empty.mkdir()
@@ -207,6 +221,80 @@ class PickerTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(list(empty.iterdir()), [])
         self.assertEqual(restored, ["setup", "teardown"])
+
+    def test_edited_cleared_and_cancelled_names(self):
+        default = "Fantasy Map Maker.html"
+        edited = self.root / "edited"
+        edited.mkdir()
+        code = export_with_picker(
+            self.chats,
+            theme="dark",
+            keys=["enter", *["backspace"] * len(default), *"notes", "enter"],
+            launch_dir=str(self.launch),
+            out_dir=edited,
+            verbose=False,
+            chats_root=self.chats_root,
+            stdout=io.StringIO(),
+            setup=lambda: None,
+            teardown=lambda: None,
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue((edited / "notes.html").is_file())
+        self.assertFalse((edited / default).exists())
+
+        cleared = self.root / "cleared"
+        cleared.mkdir()
+        code = export_with_picker(
+            self.chats,
+            theme="dark",
+            keys=["enter", *["backspace"] * len(default), "enter"],
+            launch_dir=str(self.launch),
+            out_dir=cleared,
+            verbose=False,
+            chats_root=self.chats_root,
+            stdout=io.StringIO(),
+            setup=lambda: None,
+            teardown=lambda: None,
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue((cleared / default).is_file())
+
+        cancelled = self.root / "cancelled"
+        cancelled.mkdir()
+        stdout = io.StringIO()
+        code = export_with_picker(
+            self.chats,
+            theme="dark",
+            keys=["enter", "esc", "esc"],
+            launch_dir=str(self.launch),
+            out_dir=cancelled,
+            verbose=False,
+            chats_root=self.chats_root,
+            stdout=stdout,
+            setup=lambda: None,
+            teardown=lambda: None,
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(list(cancelled.iterdir()), [])
+        self.assertIn("File name:", stdout.getvalue())
+        self.assertIn("Enter names the file", stdout.getvalue())
+
+        untitled = _chat("", "bench", "bare-id", datetime(2026, 8, 15, 16, 42))
+        frames: list[str] = []
+        result = run_picker(
+            [untitled], "dark", ["enter"], str(self.launch), frames.append, extension=".html"
+        )
+        self.assertIsNone(result.chat_id)
+        self.assertIn("bare-id.html", frames[-1])
+
+        result = run_picker(
+            [untitled],
+            "dark",
+            ["enter", *["backspace"] * len("bare-id.html"), *"a/b", "enter"],
+            str(self.launch),
+            frames.append,
+        )
+        self.assertEqual(result.file_name, "a b.html")
 
     def test_interrupt_restores_terminal(self):
         def keys():

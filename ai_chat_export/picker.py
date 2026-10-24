@@ -17,6 +17,7 @@ WORKSPACE_CAP = 24
 class PickerResult:
     chat_id: str | None
     delete_requested: bool = False
+    file_name: str | None = None
 
 
 def run_picker(
@@ -27,10 +28,14 @@ def run_picker(
     write,
     rows: int = 20,
     width: int | None = None,
+    extension: str = ".html",
 ) -> PickerResult:
     scope = "all"
     selected = 0
     show_id = False
+    naming: Chat | None = None
+    draft = ""
+    default_name = ""
 
     def visible() -> list[Chat]:
         if scope == "workspace":
@@ -48,6 +53,20 @@ def run_picker(
 
     paint()
     for key in keys:
+        if naming is not None:
+            if key == "enter":
+                name = confirm_file_name(draft, default_name, extension)
+                return PickerResult(naming.id, False, name)
+            if key == "esc":
+                naming = None
+                paint()
+                continue
+            if key == "backspace":
+                draft = draft[:-1]
+            elif len(key) == 1 and key.isprintable():
+                draft += key
+            write(render_name_frame(draft))
+            continue
         shown = visible()
         if key == "up" and shown:
             selected = max(0, selected - 1)
@@ -64,11 +83,14 @@ def run_picker(
             paint()
             return PickerResult(None, False)
         elif key == "enter":
-            paint()
             shown = visible()
             if not shown:
                 return PickerResult(None, False)
-            return PickerResult(shown[selected].id, False)
+            naming = shown[selected]
+            default_name = default_file_name(naming, extension)
+            draft = default_name
+            write(render_name_frame(draft))
+            continue
         else:
             continue
         paint()
@@ -110,12 +132,48 @@ def render_frame(
     index = (selected + 1) if count else 0
     lines.append(rule)
     lines.append(
-        f"{index}/{count}  up/down move  left/right scope  Enter exports  Esc closes  i id"
+        f"{index}/{count}  up/down move  left/right scope  Enter names the file  Esc closes  i id"
     )
     lines.append(f"theme: {theme}")
     if show_id and chats and 0 <= selected < len(chats):
         lines.append(f"id: {chats[selected].id}")
     return "\n".join(lines) + "\n"
+
+
+def render_name_frame(draft: str) -> str:
+    return f"File name: {draft}\nEnter writes  Esc returns\n"
+
+
+def default_file_name(chat: Chat, extension: str) -> str:
+    return f"{_stem(chat.display_title)}{extension}"
+
+
+def confirm_file_name(draft: str, default: str, extension: str) -> str:
+    text = draft.strip()
+    if not text:
+        return default
+    suffix = ""
+    lowered = text.lower()
+    for candidate in (".html", ".md"):
+        if lowered.endswith(candidate):
+            suffix = text[-len(candidate) :]
+            text = text[: -len(candidate)]
+            break
+    stem = _stem(text)
+    if not stem:
+        return default
+    return f"{stem}{suffix or extension}"
+
+
+def _stem(raw: str) -> str:
+    cleaned = []
+    for character in raw:
+        if character in '<>:"/\\|?*' or ord(character) < 32:
+            cleaned.append(" ")
+        else:
+            cleaned.append(character)
+    stem = " ".join("".join(cleaned).split()).rstrip(" .")
+    return stem[:80]
 
 
 def _frame_width(width: int | None) -> int:
@@ -213,6 +271,8 @@ def read_key():
             return "i"
         if character == "\x03":
             raise KeyboardInterrupt
+        if character.isprintable():
+            return character
         return ""
     character = sys.stdin.read(1)
     if character == "\x03":
@@ -227,4 +287,6 @@ def read_key():
         return arrows.get(following, "")
     if character in ("i", "I"):
         return "i"
+    if character.isprintable():
+        return character
     return ""
