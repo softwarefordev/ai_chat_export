@@ -6,9 +6,12 @@ import argparse
 import json
 import sys
 import threading
+from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import TextIO
 
 from ai_chat_export.catalog import Chat, load_catalog
+from ai_chat_export.names import export_stem
 from ai_chat_export.picker import (
     call_with_restore,
     read_key,
@@ -16,7 +19,7 @@ from ai_chat_export.picker import (
     setup_terminal,
     teardown_terminal,
 )
-from ai_chat_export.render_html import render_html
+from ai_chat_export.render_html import THEME_NAMES, render_html
 from ai_chat_export.render_md import render_markdown
 from ai_chat_export.store import load_conversation
 from ai_chat_export.transcript import build_transcript
@@ -24,7 +27,7 @@ from ai_chat_export.transcript import build_transcript
 _FRAMES = ("...", "..", ".")
 
 
-class activity:
+class Activity:
     """Cycle `...`, `..`, and `.` on a terminal while quiet work runs."""
 
     def __init__(self, stream, interval: float = 0.2) -> None:
@@ -34,7 +37,7 @@ class activity:
         self._thread: threading.Thread | None = None
         self._shown = False
 
-    def __enter__(self) -> activity:
+    def __enter__(self) -> Activity:
         isatty = getattr(self.stream, "isatty", None)
         if not callable(isatty) or not isatty():
             return self
@@ -75,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--id", dest="chat_id", help="Chat id to export. Omit to open the picker.")
     parser.add_argument(
         "--theme",
-        choices=("terminal-dark", "terminal-light", "dark-web", "light-web"),
+        choices=THEME_NAMES,
         default="terminal-dark",
         help="HTML theme written into the file (default: terminal-dark).",
     )
@@ -188,7 +191,7 @@ def export_with_picker(
     chats: list[Chat],
     *,
     theme: str,
-    keys,
+    keys: Iterable[str],
     launch_dir: str,
     out_dir: Path,
     verbose: bool,
@@ -196,9 +199,9 @@ def export_with_picker(
     show_detail: bool = False,
     write_markdown: bool = False,
     chats_root: Path,
-    stdout,
-    setup,
-    teardown,
+    stdout: TextIO,
+    setup: Callable[[], None],
+    teardown: Callable[[], None],
 ) -> int:
     def body():
         try:
@@ -256,14 +259,14 @@ def export_session(
             print(named_error, file=error)
             return 1
     warnings: list[str] = []
-    with activity(error, activity_interval):
+    with Activity(error, activity_interval):
         chats = load_catalog(chats_root, warnings)
     for note in warnings:
         print(note, file=error)
     failure: str | None = None
     html_path: Path | None = None
     md_path: Path | None = None
-    with activity(error, activity_interval):
+    with Activity(error, activity_interval):
         chat = next((item for item in chats if item.id == chat_id), None)
         if chat is None:
             failure = f"Chat not found: {chat_id}"
@@ -318,12 +321,11 @@ def export_session(
     if failure is not None:
         print(failure, file=error)
         return 1
-    if write_markdown:
-        assert md_path is not None
-        print(md_path.resolve(), file=output)
-    else:
-        assert html_path is not None
-        print(html_path.resolve(), file=output)
+    written = md_path if write_markdown else html_path
+    if written is None:
+        print("Export did not write a file.", file=error)
+        return 1
+    print(written.resolve(), file=output)
     return 0
 
 
@@ -336,17 +338,7 @@ def _named_output_error(path: Path) -> str | None:
 
 
 def safe_stem(title: str | None, chat_id: str) -> str:
-    raw = (title or "").strip() or chat_id
-    cleaned = []
-    for character in raw:
-        if character in '<>:"/\\|?*' or ord(character) < 32:
-            cleaned.append(" ")
-        else:
-            cleaned.append(character)
-    stem = " ".join("".join(cleaned).split()).rstrip(" .")
-    if not stem:
-        return chat_id
-    return stem[:80]
+    return export_stem(title, chat_id)
 
 
 def _prompts(chat_dir: Path) -> list[str]:

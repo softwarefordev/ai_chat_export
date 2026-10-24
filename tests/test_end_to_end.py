@@ -56,7 +56,8 @@ class EndToEndTests(unittest.TestCase):
             readme,
         )
         self.assertIn("`--markdown` writes the Markdown file", readme)
-        self.assertIn("`--name` writes that file path", readme)
+        self.assertIn("Windows reserved device name", readme)
+        self.assertIn("`--name` is written as given.", readme)
         self.assertIn("Enter asks for a file name.", readme)
         self.assertIn("The chat list stays on screen.", readme)
         self.assertIn("`--name` requires `--id`.", readme)

@@ -433,6 +433,49 @@ class DocumentTests(unittest.TestCase):
         )
         page = render_html(transcript, title="T", workspace="W", timestamp="t")
         self.assertIn("data:image/png;base64,AAAA", page)
+        self.assertNotIn("<script", page.lower())
+        wrapped = Transcript(
+            blocks=[Block("you", text="See this", images=[("image/png", "AA\nAA")])]
+        )
+        wrapped_page = render_html(wrapped, title="T", workspace="W", timestamp="t")
+        self.assertIn("data:image/png;base64,AAAA", wrapped_page)
+
+    def test_jpeg_alias_embeds_as_jpeg(self):
+        transcript = Transcript(
+            blocks=[Block("you", text="See this", images=[("image/jpg", "AAAA")])]
+        )
+        page = render_html(transcript, title="T", workspace="W", timestamp="t")
+        self.assertIn("data:image/jpeg;base64,AAAA", page)
+        self.assertNotIn("image/jpg", page)
+
+    def test_image_payload_cannot_break_the_tag(self):
+        payload = 'AAAA"><script>alert(1)</script>'
+        transcript = Transcript(
+            blocks=[Block("you", text="See this", images=[("image/png", payload)])]
+        )
+        page = render_html(transcript, title="T", workspace="W", timestamp="t")
+        self.assertNotIn("<script", page.lower())
+        self.assertNotIn(payload, page)
+        self.assertNotIn("<img", page)
+
+    def test_non_raster_images_are_omitted(self):
+        transcript = Transcript(
+            blocks=[
+                Block(
+                    "you",
+                    text="See this",
+                    images=[
+                        ("image/svg+xml", "SVG-PAYLOAD-MARKER"),
+                        ("text/html", "HTML-PAYLOAD-MARKER"),
+                    ],
+                )
+            ]
+        )
+        page = render_html(transcript, title="T", workspace="W", timestamp="t")
+        self.assertNotIn("SVG-PAYLOAD-MARKER", page)
+        self.assertNotIn("HTML-PAYLOAD-MARKER", page)
+        self.assertNotIn("<script", page.lower())
+        self.assertNotIn("<img", page)
 
 
 if __name__ == "__main__":

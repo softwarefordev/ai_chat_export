@@ -31,6 +31,6 @@ ai-chat-export --id <chat-id> --markdown
 ai-chat-export --id <chat-id> --name ./exports/session.html
 ```
 
-`--chats-root` points at a different catalog directory. Files are named from the chat title. An existing HTML file is replaced. `--markdown` replaces an existing Markdown file and leaves an existing HTML file unchanged. `--name` writes that file path instead. `--name` requires `--id`. Passing `--name` with `--out` is an error.
+`--chats-root` points at a different catalog directory. Files are named from the chat title. A generated name whose stem is a Windows reserved device name, such as `CON` or `NUL`, uses the chat id instead. An existing HTML file is replaced. `--markdown` replaces an existing Markdown file and leaves an existing HTML file unchanged. `--name` is written as given. `--name` requires `--id`. Passing `--name` with `--out` is an error.
 
 The tool only reads the chat store. It does not delete chats or call Cursor.

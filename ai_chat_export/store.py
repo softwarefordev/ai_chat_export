@@ -7,6 +7,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -18,9 +19,14 @@ class Conversation:
     unlinked_images: list[str] = field(default_factory=list)
 
 
+def sqlite_uri(path: Path) -> str:
+    """Open `path` read-only. `?` and `#` stay in the path."""
+    encoded = quote(Path(path).resolve().as_posix(), safe="/:")
+    return f"file:{encoded}?mode=ro"
+
+
 def load_conversation(db_path: Path) -> Conversation:
-    uri = "file:" + Path(db_path).resolve().as_posix() + "?mode=ro"
-    connection = sqlite3.connect(uri, uri=True)
+    connection = sqlite3.connect(sqlite_uri(db_path), uri=True)
     try:
         row = connection.execute("SELECT value FROM meta LIMIT 1").fetchone()
         if row is None:

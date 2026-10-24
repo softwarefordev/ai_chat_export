@@ -1,8 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
-from ai_chat_export.store import load_conversation
+from ai_chat_export.store import load_conversation, sqlite_uri
 from ai_chat_export.transcript import build_transcript, caption
 from tests.support import PNG, sample_messages, write_db, write_protobuf_db
 
@@ -60,6 +61,49 @@ class StoreTests(unittest.TestCase):
         self.assertIn(ids["unknown_ids"][0], conversation.skipped)
         texts = [message["content"] for message in conversation.messages]
         self.assertEqual(texts, ["EARLY_TURN", "LATE_TURN"])
+
+    def test_sqlite_uri_keeps_query_characters_in_the_path(self):
+        uri = sqlite_uri(Path("C:/chats/room?mode=rw#frag/store.db"))
+        parsed = urlsplit(uri)
+        self.assertEqual(parsed.query, "mode=ro")
+        self.assertEqual(parsed.fragment, "")
+        self.assertEqual(uri.count("?"), 1)
+        self.assertIn("%3F", parsed.path)
+        self.assertIn("%23", parsed.path)
+        decoded = unquote(parsed.path)
+        self.assertIn("?mode=rw", decoded)
+        self.assertIn("#frag", decoded)
+
+    def test_load_leaves_database_bytes_unchanged(self):
+        messages, _prompts = sample_messages()
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "store.db"
+            write_db(db_path, messages, [], [])
+            before = db_path.read_bytes()
+            load_conversation(db_path)
+            self.assertEqual(db_path.read_bytes(), before)
+
+    def test_special_directory_does_not_open_a_truncated_path(self):
+        messages, _prompts = sample_messages()
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            created = False
+            for name in ("chat?mode=rw", "chat#frag"):
+                weird = base / name
+                try:
+                    weird.mkdir()
+                except OSError:
+                    continue
+                created = True
+                db_path = weird / "store.db"
+                write_db(db_path, messages, [], [])
+                before = db_path.read_bytes()
+                truncated = base / "chat"
+                load_conversation(db_path)
+                self.assertEqual(db_path.read_bytes(), before)
+                self.assertFalse(truncated.exists())
+            if not created:
+                self.skipTest("OS rejects ? and # in a directory name")
 
 
 class TranscriptTests(unittest.TestCase):

@@ -10,7 +10,12 @@ from unittest import mock
 
 from ai_chat_export.__main__ import export_with_picker
 from ai_chat_export.catalog import Chat, load_catalog
-from ai_chat_export.picker import TIME_WIDTH, render_frame, run_picker, teardown_terminal
+from ai_chat_export.picker import (
+    TIME_WIDTH,
+    render_frame,
+    run_picker,
+    teardown_terminal,
+)
 from tests.support import sample_messages, write_chat
 
 
@@ -172,6 +177,44 @@ class PickerTests(unittest.TestCase):
         self.assertIsNone(result.chat_id)
         self.assertFalse(result.delete_requested)
         self.assertIn("theme: terminal-light", frames[-1])
+
+    def test_reserved_names_use_the_chat_id(self):
+        messages, prompts = sample_messages()
+        write_chat(
+            self.chats_root,
+            chat_id="room-id",
+            cwd=str(self.launch),
+            title="CON",
+            updated_ms=9_000_000_000_000,
+            messages=messages,
+            prompts=prompts,
+        )
+        chats = load_catalog(self.chats_root)
+        frames: list[str] = []
+        run_picker(chats, "terminal-dark", ["enter"], str(self.launch), frames.append, width=80)
+        self.assertIn("file: room-id.html", frames[-1])
+        self.assertNotIn("file: CON.html", frames[-1])
+
+        default = "Fantasy Map Maker.html"
+        keys = ["enter", *["backspace"] * len(default), *"COM1", "enter"]
+        out = self.root / "reserved-out"
+        out.mkdir()
+        stdout = io.StringIO()
+        code = export_with_picker(
+            self.chats,
+            theme="terminal-dark",
+            keys=keys,
+            launch_dir=str(self.launch),
+            out_dir=out,
+            verbose=False,
+            chats_root=self.chats_root,
+            stdout=stdout,
+            setup=lambda: None,
+            teardown=lambda: None,
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue((out / "here.html").is_file())
+        self.assertFalse((out / "COM1.html").exists())
 
     def test_footer_shows_the_requested_theme(self):
         for name in ("terminal-light", "dark-web", "light-web"):

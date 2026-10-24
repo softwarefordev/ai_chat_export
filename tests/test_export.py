@@ -7,7 +7,7 @@ import time
 import unittest
 from pathlib import Path
 
-from ai_chat_export.__main__ import activity, export_session, main, safe_stem
+from ai_chat_export.__main__ import Activity, export_session, main, safe_stem
 from ai_chat_export.catalog import format_timestamp
 from tests.support import sample_messages, write_chat
 
@@ -403,6 +403,59 @@ class ExportTests(unittest.TestCase):
 
     def test_safe_stem_strips_illegal_characters(self):
         self.assertEqual(safe_stem('Map: "Maker"', "id"), "Map Maker")
+        self.assertEqual(len(safe_stem("A" * 100, "id")), 80)
+        self.assertEqual(safe_stem(":::", ""), "export")
+
+    def test_reserved_title_uses_the_chat_id(self):
+        self._chat(chat_id="room-id", title="CON")
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="room-id",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue((self.out / "room-id.html").is_file())
+        self.assertFalse((self.out / "CON.html").exists())
+
+    def test_reserved_markdown_title_uses_the_chat_id(self):
+        self._chat(chat_id="room-id", title="nul")
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="room-id",
+            out_dir=self.out,
+            write_markdown=True,
+            stdout=io.StringIO(),
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue((self.out / "room-id.md").is_file())
+        self.assertFalse((self.out / "nul.md").exists())
+
+    def test_reserved_id_uses_export_suffix(self):
+        self._chat(chat_id="CON", title=None, include_title=False)
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="CON",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue((self.out / "CON-export.html").is_file())
+        self.assertFalse((self.out / "CON.html").exists())
+
+    def test_explicit_reserved_path_is_written_as_given(self):
+        self._chat()
+        target = self.out / "CON.html"
+        code = export_session(
+            chats_root=self.chats,
+            chat_id="chat-1",
+            out_dir=self.out,
+            output_path=target,
+            stdout=io.StringIO(),
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(target.is_file())
+        self.assertFalse((self.out / "Fantasy Map Maker.html").exists())
 
     def test_wrapped_query_detail_and_turn_time(self):
         query = "Show only the query."
@@ -505,7 +558,7 @@ class ExportTests(unittest.TestCase):
 
     def test_open_stretch_advances_through_each_frame(self):
         terminal = Terminal()
-        with activity(terminal, 0.03):
+        with Activity(terminal, 0.03):
             time.sleep(0.12)
         text = terminal.getvalue()
         first = text.find("...")

@@ -227,7 +227,7 @@ The CLI SHALL provide All chats and This workspace. This workspace SHALL include
 - **THEN** the list includes only chats whose workspace path is the launch directory
 
 ### Requirement: Interactive picker
-Running the CLI without a chat id SHALL open a picker. Up and down SHALL move the selection, left and right SHALL switch scope, Enter SHALL open a file-name line for the selected chat and SHALL NOT write a file yet, and Esc SHALL close the picker without writing files. The name line SHALL start as the title file name, or the chat id when the chat has no title. Confirming that line SHALL write the export under that file name in the output directory.
+Running the CLI without a chat id SHALL open a picker. Up and down SHALL move the selection, left and right SHALL switch scope, Enter SHALL open a file-name line for the selected chat and SHALL NOT write a file yet, and Esc SHALL close the picker without writing files. The name line SHALL start as the title file name, or the chat id when the chat has no title. Confirming that line SHALL write the export under that file name in the output directory. A stem that is `CON`, `PRN`, `AUX`, `NUL`, `COM1` through `COM9`, or `LPT1` through `LPT9`, compared without regard to case, SHALL be replaced with the chat id, or with the id plus `-export` when the id is also one of those names. The replacement applies to the name line's starting value and to the name confirmed from the line.
 
 #### Scenario: Export from the picker
 - **WHEN** the user presses Enter on a selected chat that has a conversation
@@ -256,6 +256,14 @@ Running the CLI without a chat id SHALL open a picker. Up and down SHALL move th
 #### Scenario: Close without export
 - **WHEN** the user presses Esc on the chat list
 - **THEN** the CLI exits without writing files
+
+#### Scenario: Reserved default name
+- **WHEN** the selected chat's title is `CON` and the user opens the name line
+- **THEN** the name line shows the chat id with the export extension and does not show `CON.html`
+
+#### Scenario: Reserved confirmed draft
+- **WHEN** the user sets the name line to `COM1` and presses Enter
+- **THEN** the written file uses the chat id as its stem and is not named `COM1.html`
 
 ### Requirement: Picker leaves chats intact
 The picker SHALL NOT delete or modify chats in the local store.
@@ -302,7 +310,7 @@ A successful export SHALL write one HTML file from the filtered transcript and S
 - **THEN** the HTML file and the Markdown file exist and the CLI prints both paths
 
 ### Requirement: Output location and names
-The CLI SHALL name each file it writes from the chat title and write it in the current directory. A supplied output directory SHALL be used instead of the current directory. A chat with no title SHALL use its id as the file name. A default export SHALL write the HTML file. Passing `--markdown` SHALL also write the Markdown file. Passing `--name` without an output directory SHALL write only that path. Without a chat id, `--name` SHALL write no file. When a file this export writes already exists, the export SHALL replace that file.
+The CLI SHALL name each file it writes from the chat title and write it in the current directory. A supplied output directory SHALL be used instead of the current directory. A chat with no title SHALL use its id as the file name. A default export SHALL write the HTML file. Passing `--markdown` SHALL also write the Markdown file. Passing `--name` without an output directory SHALL write only that path. Without a chat id, `--name` SHALL write no file. When a file this export writes already exists, the export SHALL replace that file. A generated stem that is `CON`, `PRN`, `AUX`, `NUL`, `COM1` through `COM9`, or `LPT1` through `LPT9`, compared without regard to case, SHALL use the chat id instead. When that id is also one of those names, the stem SHALL be the id plus `-export`. A path passed to `--name` SHALL be written as given.
 
 #### Scenario: Default directory
 - **WHEN** the user does not supply an output directory and does not pass `--name`
@@ -363,6 +371,22 @@ The CLI SHALL name each file it writes from the chat title and write it in the c
 #### Scenario: Name is a directory
 - **WHEN** the user passes a chat id and the path passed to `--name` is an existing directory
 - **THEN** the CLI reports the error, writes no file, and exits unsuccessfully
+
+#### Scenario: Reserved title
+- **WHEN** the chat title is `CON` and the user exports without `--name`
+- **THEN** the written file uses the chat id as its stem and is not named `CON.html`
+
+#### Scenario: Reserved markdown title
+- **WHEN** the chat title is `nul` and the user passes `--markdown` and does not pass `--name`
+- **THEN** the written file uses the chat id as its stem and is not named `nul.md`
+
+#### Scenario: Reserved id
+- **WHEN** the chat has no title, its id is `CON`, and the user exports without `--name`
+- **THEN** the written stem is `CON-export`
+
+#### Scenario: Explicit reserved path
+- **WHEN** the user passes a chat id and `--name` whose file name is `CON.html`
+- **THEN** the CLI writes that path
 
 ### Requirement: Default transcript
 The default transcript SHALL include each user query and the assistant's visible text, in conversation order. The query SHALL be the inner text of each `user_query` element. When the typed text has no `user_query` element and no wrapper elements, that typed text SHALL be the query. It SHALL omit a conversation summary, Cursor command blocks, other injected context, timestamp markup, tool captions, system text, assistant reasoning, and raw tool output.
@@ -494,6 +518,17 @@ The CLI SHALL read the local chat store and SHALL NOT modify it.
 - **WHEN** an export finishes
 - **THEN** the chat store's files are unchanged
 
+### Requirement: Store path stays read-only
+The CLI SHALL open the chat database at its given path in read-only mode. A `?` or `#` in that path SHALL remain part of the path and SHALL NOT select another open mode. The database file SHALL be unchanged.
+
+#### Scenario: Question mark in the path
+- **WHEN** the database path contains `?`
+- **THEN** the CLI reads that path read-only and does not create or change a database at the path truncated at `?`
+
+#### Scenario: Hash in the path
+- **WHEN** the database path contains `#`
+- **THEN** the CLI reads that path read-only and does not create or change a database at the path truncated at `#`
+
 ### Requirement: Chat with no conversation
 The CLI SHALL report when a selected chat has no conversation, and SHALL write no export files for it.
 
@@ -514,6 +549,29 @@ The export SHALL name a stored image that is not part of a visible turn in the f
 #### Scenario: Unlinked image
 - **WHEN** the conversation stores an image that is not part of a visible turn
 - **THEN** the footer names the image and the body does not embed it
+
+### Requirement: Safe embedded image
+The HTML page SHALL embed an image only when its media type is `image/png`, `image/jpeg`, `image/gif`, or `image/webp` and its payload is base64. Media type `image/jpg` SHALL be embedded as `image/jpeg`. Any other image SHALL be omitted from the image tag. The page SHALL contain no script.
+
+#### Scenario: PNG stays embedded
+- **WHEN** a turn includes an image of type `image/png` whose payload is base64
+- **THEN** the page shows that image and contains no script element
+
+#### Scenario: JPEG alias
+- **WHEN** a turn includes an image of type `image/jpg` whose payload is base64
+- **THEN** the page embeds that image as `image/jpeg`
+
+#### Scenario: Markup in the payload
+- **WHEN** an image payload contains a quote followed by a script element
+- **THEN** the page contains no script element and does not treat that payload as markup
+
+#### Scenario: SVG is omitted
+- **WHEN** an image media type is `image/svg+xml`
+- **THEN** the page does not embed that payload
+
+#### Scenario: HTML media type is omitted
+- **WHEN** an image media type is `text/html`
+- **THEN** the page does not embed that payload and contains no script element
 
 ### Requirement: User turn detail
 The CLI SHALL omit conversation summaries and Cursor command blocks unless the user passes `--detail`. A shown summary SHALL be the inner text of each `conversation_summary` element. A shown command block SHALL be the inner text of each `cursor_commands` element. Shown blocks SHALL appear once inside that User section, after the query when a query is present.

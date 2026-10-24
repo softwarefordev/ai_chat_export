@@ -34,6 +34,16 @@ class Transcript:
     footer: list[str] = field(default_factory=list)
 
 
+SECTION_HEADINGS = {
+    "you": "User",
+    "agent": "Agent",
+    "system": "System",
+    "context": "Context",
+    "reasoning": "Reasoning",
+    "tool_output": "Tool output",
+}
+
+
 def build_transcript(
     messages: list[dict],
     prompts: list[str],

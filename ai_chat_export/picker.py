@@ -5,9 +5,11 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ai_chat_export.catalog import Chat, filter_workspace
+from ai_chat_export.names import clean_stem, export_stem
 
 TIME_WIDTH = 21
 WORKSPACE_CAP = 24
@@ -60,7 +62,7 @@ def run_picker(
     for key in keys:
         if naming is not None:
             if key == "enter":
-                name = confirm_file_name(draft, default_name, extension)
+                name = confirm_file_name(draft, default_name, extension, naming.id)
                 return PickerResult(naming.id, False, name)
             if key == "esc":
                 naming = None
@@ -164,10 +166,10 @@ def append_name_line(frame: str, draft: str, frame_width: int) -> str:
 
 
 def default_file_name(chat: Chat, extension: str) -> str:
-    return f"{_stem(chat.display_title)}{extension}"
+    return f"{export_stem(chat.title, chat.id)}{extension}"
 
 
-def confirm_file_name(draft: str, default: str, extension: str) -> str:
+def confirm_file_name(draft: str, default: str, extension: str, chat_id: str) -> str:
     text = draft.strip()
     if not text:
         return default
@@ -178,21 +180,10 @@ def confirm_file_name(draft: str, default: str, extension: str) -> str:
             suffix = text[-len(candidate) :]
             text = text[: -len(candidate)]
             break
-    stem = _stem(text)
+    stem = clean_stem(text)
     if not stem:
         return default
-    return f"{stem}{suffix or extension}"
-
-
-def _stem(raw: str) -> str:
-    cleaned = []
-    for character in raw:
-        if character in '<>:"/\\|?*' or ord(character) < 32:
-            cleaned.append(" ")
-        else:
-            cleaned.append(character)
-    stem = " ".join("".join(cleaned).split()).rstrip(" .")
-    return stem[:80]
+    return f"{export_stem(stem, chat_id)}{suffix or extension}"
 
 
 def _frame_width(width: int | None) -> int:
@@ -243,7 +234,11 @@ def _fit_right(text: str, width: int) -> str:
     return text[: width - 3] + "..."
 
 
-def call_with_restore(body, teardown, setup=None):
+def call_with_restore(
+    body: Callable[[], int],
+    teardown: Callable[[], None],
+    setup: Callable[[], None] | None = None,
+) -> int:
     if setup is not None:
         setup()
     try:
@@ -252,7 +247,7 @@ def call_with_restore(body, teardown, setup=None):
         teardown()
 
 
-def setup_terminal():
+def setup_terminal() -> list | None:
     if os.name == "nt":
         return None
     import termios
@@ -264,7 +259,7 @@ def setup_terminal():
     return saved
 
 
-def teardown_terminal(saved) -> None:
+def teardown_terminal(saved: list | None) -> None:
     sys.stdout.write(SHOW_CURSOR + DEFAULT_CURSOR)
     sys.stdout.flush()
     if saved is None or os.name == "nt":
@@ -274,7 +269,7 @@ def teardown_terminal(saved) -> None:
     termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, saved)
 
 
-def read_key():
+def read_key() -> str:
     if os.name == "nt":
         import msvcrt
 

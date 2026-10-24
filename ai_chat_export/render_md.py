@@ -2,16 +2,7 @@
 
 from __future__ import annotations
 
-from ai_chat_export.transcript import Block, Transcript
-
-_HEADINGS = {
-    "you": "User",
-    "agent": "Agent",
-    "system": "System",
-    "context": "Context",
-    "reasoning": "Reasoning",
-    "tool_output": "Tool output",
-}
+from ai_chat_export.transcript import SECTION_HEADINGS, Block, Transcript
 
 
 def _piece_markdown(block: Block) -> list[str]:
@@ -27,9 +18,9 @@ def _piece_markdown(block: Block) -> list[str]:
             parts.append(f"![attachment](data:{piece.media};base64,{piece.text})")
             parts.append("")
         elif piece.kind == "reasoning":
-            parts.extend(["### Reasoning", "", piece.text, ""])
+            parts.extend([f"### {SECTION_HEADINGS['reasoning']}", "", piece.text, ""])
         elif piece.kind == "tool_output":
-            parts.extend(["### Tool output", "", piece.text, ""])
+            parts.extend([f"### {SECTION_HEADINGS['tool_output']}", "", piece.text, ""])
     return parts
 
 
@@ -42,7 +33,7 @@ def render_markdown(
 ) -> str:
     parts = [f"# {title}", "", f"{workspace} · {timestamp}", ""]
     for block in transcript.blocks:
-        heading = _HEADINGS.get(block.kind, block.kind)
+        heading = SECTION_HEADINGS.get(block.kind, block.kind)
         if block.timestamp and block.kind in ("you", "agent"):
             heading = f"{heading} · {block.timestamp}"
         parts.append(f"## {heading}")

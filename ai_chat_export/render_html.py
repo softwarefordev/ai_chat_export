@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import re
 from datetime import datetime
 
-from ai_chat_export.transcript import Block, Transcript
+from ai_chat_export.transcript import SECTION_HEADINGS, Block, Transcript
 
 _WEB_BODY = '18px/1.5 Georgia, "Iowan Old Style", Palatino, serif'
 _WEB_NAV = '"Segoe UI", system-ui, sans-serif'
@@ -101,14 +102,10 @@ _THEMES = {
     "light-web": _LIGHT_WEB,
 }
 
-_HEADINGS = {
-    "you": "User",
-    "agent": "Agent",
-    "system": "System",
-    "context": "Context",
-    "reasoning": "Reasoning",
-    "tool_output": "Tool output",
-}
+THEME_NAMES = tuple(_THEMES)
+
+_RASTER_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
+_ASCII_WHITESPACE = frozenset(" \t\n\r\v\f")
 
 
 def render_html(
@@ -301,7 +298,7 @@ def _nav_label(block: Block) -> str:
 
 
 def _section(block: Block, anchor: str = "", turn: int = 0) -> str:
-    heading = _HEADINGS.get(block.kind, block.kind)
+    heading = SECTION_HEADINGS.get(block.kind, block.kind)
     if block.pieces:
         body = "\n".join(_piece_html(piece) for piece in block.pieces)
     else:
@@ -310,7 +307,9 @@ def _section(block: Block, anchor: str = "", turn: int = 0) -> str:
         captions = "\n".join(
             f'<p class="tool">&gt; {html.escape(caption)}</p>' for caption in block.captions
         )
-        images = "\n".join(_image_html(media, data) for media, data in block.images)
+        images = "\n".join(
+            tag for media, data in block.images if (tag := _image_html(media, data))
+        )
         body = "\n".join(part for part in (prose, detail, captions, images) if part)
     ident = f' id="{html.escape(anchor)}"' if anchor else ""
     mark = f' data-turn="{turn}"' if turn else ""
@@ -335,12 +334,21 @@ def _piece_html(piece) -> str:
         return f'<p class="tool">&gt; {html.escape(piece.text)}</p>'
     if piece.kind == "image":
         return _image_html(piece.media, piece.text)
-    label = "Reasoning" if piece.kind == "reasoning" else "Tool output"
+    label = SECTION_HEADINGS.get(piece.kind, piece.kind)
     return f"<h3>{label}</h3>\n{_plain_paragraphs(piece.text)}"
 
 
 def _image_html(media: str, data: str) -> str:
-    return f'<img alt="attachment" src="data:{html.escape(media)};base64,{data}">'
+    kind = "image/jpeg" if media == "image/jpg" else media
+    if kind not in _RASTER_TYPES:
+        return ""
+    compact = "".join(character for character in data if character not in _ASCII_WHITESPACE)
+    try:
+        raw = base64.b64decode(compact, validate=True)
+    except ValueError:
+        return ""
+    encoded = base64.b64encode(raw).decode("ascii")
+    return f'<img alt="attachment" src="data:{kind};base64,{encoded}">'
 
 
 def _footer(lines: list[str]) -> str:
