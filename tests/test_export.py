@@ -1,14 +1,17 @@
 import contextlib
 import hashlib
 import io
+import json
 import os
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from ai_chat_export.__main__ import Activity, export_session, main, safe_stem
 from ai_chat_export.catalog import format_timestamp
+from ai_chat_export.picker import run_picker
 from tests.support import sample_messages, write_chat
 
 
@@ -64,7 +67,16 @@ class ExportTests(unittest.TestCase):
         stdout = io.StringIO()
         try:
             with contextlib.redirect_stdout(stdout):
-                code = main(["--id", "chat-1", "--chats-root", str(self.chats)])
+                code = main(
+                    [
+                        "--id",
+                        "chat-1",
+                        "--chats-root",
+                        str(self.chats),
+                        "--projects-root",
+                        str(self.root / "no-projects"),
+                    ]
+                )
         finally:
             os.chdir(previous)
         html_path = self.out / "Fantasy Map Maker.html"
@@ -195,6 +207,8 @@ class ExportTests(unittest.TestCase):
                     "--out",
                     str(self.out / "cli"),
                     "--markdown",
+                    "--projects-root",
+                    str(self.root / "no-projects"),
                 ]
             )
         self.assertEqual(cli, 0)
@@ -274,6 +288,8 @@ class ExportTests(unittest.TestCase):
                     str(self.chats),
                     "--name",
                     str(self.root / "from-id.html"),
+                    "--projects-root",
+                    str(self.root / "no-projects"),
                 ]
             )
         self.assertEqual(cli, 0)
@@ -610,6 +626,262 @@ class ExportTests(unittest.TestCase):
         self.assertIn("\r   \r" + warning + "\n", text)
         self.assertLess(text.find("..."), warn_at)
         self.assertIn("...", text[warn_at + len(warning):])
+
+    def test_ide_id_writes_html_without_a_source_cell(self):
+        workspace = self.root / "MapFolder"
+        workspace.mkdir()
+        transcript, trusted = _write_export_transcript(
+            self.root / "projects",
+            transcript_id="ide-1",
+            query="River map",
+            reply="The map is ready.",
+            workspace=str(workspace),
+        )
+        before = transcript.read_bytes(), trusted.read_bytes()
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = main(
+                [
+                    "--id",
+                    "ide-1",
+                    "--chats-root",
+                    str(self.root / "missing-chats"),
+                    "--projects-root",
+                    str(self.root / "projects"),
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        page = (self.out / "River map.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn(str((self.out / "River map.html").resolve()), stdout.getvalue())
+        self.assertIn("River map", page)
+        self.assertIn("MapFolder", page)
+        self.assertIn("The map is ready.", page)
+        self.assertNotIn("CLI", page)
+        self.assertNotIn("IDE", page)
+        self.assertEqual(before, (transcript.read_bytes(), trusted.read_bytes()))
+
+    def test_shared_id_exports_the_agent_chat(self):
+        self._chat(chat_id="same", title="Chat copy")
+        _write_export_transcript(
+            self.root / "projects",
+            transcript_id="same",
+            query="Only in the transcript",
+            reply="Transcript reply.",
+            workspace=str(self.root),
+        )
+        code = export_session(
+            chats_root=self.chats,
+            projects_root=self.root / "projects",
+            chat_id="same",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+        )
+        page = (self.out / "Chat copy.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn("Please add a river tool.", page)
+        self.assertNotIn("Only in the transcript", page)
+
+    def test_empty_ide_transcript_writes_no_file(self):
+        folder = self.root / "projects" / "demo" / "agent-transcripts" / "empty"
+        folder.mkdir(parents=True)
+        (folder / "empty.jsonl").write_text(
+            json.dumps({"type": "turn_ended", "status": "success"}) + "\n",
+            encoding="utf-8",
+        )
+        stderr = io.StringIO()
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            projects_root=self.root / "projects",
+            chat_id="empty",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+            stderr=stderr,
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("no transcript", stderr.getvalue())
+        self.assertEqual(list(self.out.iterdir()), [])
+
+    def test_source_flag_filters_cli_ide_and_rejects_unknown(self):
+        self._chat(chat_id="agent-1", title="Fantasy Map Maker")
+        _write_export_transcript(
+            self.root / "projects",
+            transcript_id="ide-1",
+            query="River map",
+            reply="The map is ready.",
+            workspace=str(self.root),
+        )
+        unknown = self.root / "unknown-out"
+        unknown.mkdir()
+        stderr = io.StringIO()
+        with (
+            mock.patch("ai_chat_export.__main__.load_sessions") as load,
+            contextlib.redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as raised:
+                main(
+                    [
+                        "--source",
+                        "other",
+                        "--id",
+                        "agent-1",
+                        "--chats-root",
+                        str(self.chats),
+                        "--projects-root",
+                        str(self.root / "projects"),
+                        "--out",
+                        str(unknown),
+                    ]
+                )
+        self.assertNotEqual(raised.exception.code, 0)
+        load.assert_not_called()
+        self.assertNotIn("Chat not found", stderr.getvalue())
+        self.assertEqual(list(unknown.iterdir()), [])
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = main(
+                [
+                    "--id",
+                    "agent-1",
+                    "--source",
+                    "cursor-cli",
+                    "--chats-root",
+                    str(self.chats),
+                    "--projects-root",
+                    str(self.root / "projects"),
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertTrue((self.out / "Fantasy Map Maker.html").is_file())
+
+        rejected = self.root / "rejected"
+        rejected.mkdir()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = main(
+                [
+                    "--id",
+                    "agent-1",
+                    "--source",
+                    "cursor-ide",
+                    "--chats-root",
+                    str(self.chats),
+                    "--projects-root",
+                    str(self.root / "projects"),
+                    "--out",
+                    str(rejected),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("Chat not found", stderr.getvalue())
+        self.assertEqual(list(rejected.iterdir()), [])
+
+        calls: list[dict] = []
+
+        def fake(chats, theme, keys, launch, write, **kwargs):
+            frames: list[str] = []
+            result = run_picker(
+                chats,
+                theme,
+                ["s"],
+                launch,
+                frames.append,
+                width=80,
+                sources=kwargs.get("sources"),
+            )
+            calls.append(
+                {
+                    "sources": kwargs.get("sources"),
+                    "frames": frames,
+                    "kinds": {chat.source for chat in chats},
+                }
+            )
+            return result
+
+        with (
+            mock.patch("ai_chat_export.__main__.run_picker", side_effect=fake),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            code = main(
+                [
+                    "--source",
+                    "cursor-cli",
+                    "--chats-root",
+                    str(self.chats),
+                    "--projects-root",
+                    str(self.root / "projects"),
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0]["sources"], {"cli"})
+        self.assertIn("Cursor-CLI *", calls[0]["frames"][0])
+        self.assertIn("Fantasy Map Maker", calls[0]["frames"][0])
+        self.assertNotIn("River map", calls[0]["frames"][0])
+        self.assertIn("Cursor-IDE *", calls[0]["frames"][-1])
+        self.assertIn("River map", calls[0]["frames"][-1])
+
+        with (
+            mock.patch("ai_chat_export.__main__.run_picker", side_effect=fake),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            code = main(
+                [
+                    "--source",
+                    "cursor-cli",
+                    "--source",
+                    "cursor-ide",
+                    "--chats-root",
+                    str(self.chats),
+                    "--projects-root",
+                    str(self.root / "projects"),
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertIsNone(calls[1]["sources"])
+        self.assertIn("cli", calls[1]["kinds"])
+        self.assertIn("ide", calls[1]["kinds"])
+        self.assertIn("Fantasy Map Maker", calls[1]["frames"][0])
+        self.assertIn("River map", calls[1]["frames"][0])
+        self.assertIn("All sources *", calls[1]["frames"][0])
+
+
+def _write_export_transcript(
+    root: Path,
+    *,
+    transcript_id: str,
+    query: str,
+    reply: str,
+    workspace: str,
+) -> tuple[Path, Path]:
+    project = root / "demo"
+    project.mkdir(parents=True, exist_ok=True)
+    trusted = project / ".workspace-trusted"
+    trusted.write_text(json.dumps({"workspacePath": workspace}), encoding="utf-8")
+    folder = project / "agent-transcripts" / transcript_id
+    folder.mkdir(parents=True)
+    path = folder / f"{transcript_id}.jsonl"
+    lines = [
+        {
+            "role": "user",
+            "message": {
+                "content": [{"type": "text", "text": f"<user_query>\n{query}\n</user_query>"}]
+            },
+        },
+        {
+            "role": "assistant",
+            "message": {"content": [{"type": "text", "text": reply}]},
+        },
+    ]
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+    return path, trusted
 
 
 class Terminal(io.StringIO):

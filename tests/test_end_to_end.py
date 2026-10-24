@@ -37,6 +37,9 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("--name", completed.stdout)
         self.assertIn("asks for a file name", completed.stdout)
         self.assertIn("when --id is set", completed.stdout)
+        self.assertIn("--projects-root", completed.stdout)
+        self.assertIn("cursor-cli", completed.stdout)
+        self.assertIn("cursor-ide", completed.stdout)
         readme = Path(__file__).resolve().parents[1].joinpath("README.md").read_text(encoding="utf-8")
         self.assertTrue(readme.startswith("# ai-chat-export\n"))
         self.assertIn("ai-chat-export", readme)
@@ -47,7 +50,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("terminal-dark", readme)
         self.assertIn("--theme terminal-light", readme)
         self.assertIn(
-            "The list shows the title, workspace, and time in aligned columns.",
+            "The list shows the title, workspace, source, and time in aligned columns.",
             readme,
         )
         self.assertIn("`i` shows the selected chat id.", readme)
@@ -61,6 +64,10 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("Enter asks for a file name.", readme)
         self.assertIn("The chat list stays on screen.", readme)
         self.assertIn("`--name` requires `--id`.", readme)
+        self.assertIn("--projects-root", readme)
+        self.assertIn("Cursor-CLI", readme)
+        self.assertIn("Cu-CLI", readme)
+        self.assertIn("--source", readme)
         self.assertNotIn("writes nothing", readme)
 
     def test_former_theme_names_are_rejected(self):
@@ -112,6 +119,8 @@ class EndToEndTests(unittest.TestCase):
                         str(root / "chats"),
                         "--out",
                         str(out),
+                        "--projects-root",
+                        str(root / "no-projects"),
                     ]
                 )
             self.assertEqual(code, 0)

@@ -10,7 +10,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TextIO
 
-from ai_chat_export.catalog import Chat, load_catalog
+from ai_chat_export.catalog import SESSION_SOURCES, Chat, allowed_sources
+from ai_chat_export.ide import load_ide_conversation, load_sessions
 from ai_chat_export.names import export_stem
 from ai_chat_export.picker import (
     call_with_restore,
@@ -113,6 +114,17 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Catalog root. Defaults to ~/.cursor/chats.",
     )
+    parser.add_argument(
+        "--projects-root",
+        type=Path,
+        help="IDE transcript root. Defaults to ~/.cursor/projects.",
+    )
+    parser.add_argument(
+        "--source",
+        action="append",
+        choices=[item.argument for item in SESSION_SOURCES],
+        help="Session source to include: cursor-cli or cursor-ide. Repeat to name more than one.",
+    )
     args = parser.parse_args(argv)
     if args.name is not None and not args.chat_id:
         print("`--name` requires `--id`.", file=sys.stderr)
@@ -121,10 +133,13 @@ def main(argv: list[str] | None = None) -> int:
         print("Pass either --name or --out.", file=sys.stderr)
         return 1
     chats_root = args.chats_root or (Path.home() / ".cursor" / "chats")
+    projects_root = args.projects_root or (Path.home() / ".cursor" / "projects")
+    sources = allowed_sources(args.source)
     out_dir = args.out or Path.cwd()
     if args.chat_id:
         return export_session(
             chats_root=chats_root,
+            projects_root=projects_root,
             chat_id=args.chat_id,
             out_dir=out_dir,
             theme=args.theme,
@@ -133,9 +148,10 @@ def main(argv: list[str] | None = None) -> int:
             show_detail=args.detail,
             write_markdown=args.markdown,
             output_path=args.name,
+            sources=sources,
         )
     warnings: list[str] = []
-    chats = load_catalog(chats_root, warnings)
+    chats = load_sessions(chats_root, projects_root, warnings)
     for note in warnings:
         print(note, file=sys.stderr)
 
@@ -159,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
                 str(Path.cwd()),
                 write,
                 extension=".md" if args.markdown else ".html",
+                sources=sources,
             )
         except KeyboardInterrupt:
             return 130
@@ -166,6 +183,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return export_session(
             chats_root=chats_root,
+            projects_root=projects_root,
             chat_id=result.chat_id,
             out_dir=out_dir,
             theme=args.theme,
@@ -174,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
             show_detail=args.detail,
             write_markdown=args.markdown,
             file_name=result.file_name,
+            sources=sources,
         )
 
     state: dict[str, object] = {"saved": None}
@@ -239,6 +258,7 @@ def export_session(
     *,
     chats_root: Path,
     chat_id: str,
+    projects_root: Path | None = None,
     out_dir: Path,
     theme: str = "terminal-dark",
     verbose: bool = False,
@@ -247,6 +267,7 @@ def export_session(
     write_markdown: bool = False,
     file_name: str | None = None,
     output_path: Path | None = None,
+    sources: set[str] | None = None,
     stdout=None,
     stderr=None,
     activity_interval: float = 0.2,
@@ -260,7 +281,9 @@ def export_session(
             return 1
     warnings: list[str] = []
     with Activity(error, activity_interval):
-        chats = load_catalog(chats_root, warnings)
+        chats = load_sessions(chats_root, projects_root, warnings)
+        if sources is not None:
+            chats = [chat for chat in chats if chat.source in sources]
     for note in warnings:
         print(note, file=error)
     failure: str | None = None
@@ -274,8 +297,12 @@ def export_session(
             failure = f"Chat has no transcript: {chat_id}"
         else:
             try:
-                conversation = load_conversation(chat.path / "store.db")
-            except (OSError, ValueError, KeyError) as exc:
+                if chat.source == "ide":
+                    conversation, prompts = load_ide_conversation(chat.path)
+                else:
+                    conversation = load_conversation(chat.path / "store.db")
+                    prompts = _prompts(chat.path)
+            except (OSError, UnicodeError, ValueError, KeyError) as exc:
                 failure = f"Chat has no transcript: {chat_id} ({exc})"
             else:
                 if not conversation.messages:
@@ -283,7 +310,7 @@ def export_session(
                 else:
                     transcript = build_transcript(
                         conversation.messages,
-                        _prompts(chat.path),
+                        prompts,
                         verbose=verbose,
                         show_tools=show_tools,
                         show_detail=show_detail,

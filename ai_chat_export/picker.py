@@ -8,10 +8,11 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ai_chat_export.catalog import Chat, filter_workspace
+from ai_chat_export.catalog import SESSION_SOURCES, Chat, filter_workspace
 from ai_chat_export.names import clean_stem, export_stem
 
 TIME_WIDTH = 21
+SOURCE_WIDTH = 6
 WORKSPACE_CAP = 24
 
 
@@ -31,6 +32,7 @@ def run_picker(
     rows: int = 20,
     width: int | None = None,
     extension: str = ".html",
+    sources: set[str] | None = None,
 ) -> PickerResult:
     scope = "all"
     selected = 0
@@ -38,11 +40,13 @@ def run_picker(
     naming: Chat | None = None
     draft = ""
     default_name = ""
+    allowed = None if sources is None else set(sources)
 
     def visible() -> list[Chat]:
-        if scope == "workspace":
-            return filter_workspace(chats, launch_dir)
-        return list(chats)
+        rows_now = filter_workspace(chats, launch_dir) if scope == "workspace" else list(chats)
+        if allowed is None:
+            return rows_now
+        return [chat for chat in rows_now if chat.source in allowed]
 
     def paint() -> None:
         nonlocal selected
@@ -51,11 +55,14 @@ def run_picker(
             selected = min(selected, len(shown) - 1)
         else:
             selected = 0
-        write(render_frame(shown, selected, scope, theme, rows, width, show_id) + HIDE_CURSOR)
+        write(
+            render_frame(shown, selected, scope, theme, rows, width, show_id, allowed)
+            + HIDE_CURSOR
+        )
 
     def paint_name() -> None:
         shown = visible()
-        frame = render_frame(shown, selected, scope, theme, rows, width, show_id)
+        frame = render_frame(shown, selected, scope, theme, rows, width, show_id, allowed)
         write(append_name_line(frame, draft, _frame_width(width)))
 
     paint()
@@ -86,6 +93,9 @@ def run_picker(
             pass
         elif key in ("i", "I"):
             show_id = not show_id
+        elif key in ("s", "S"):
+            allowed = _cycle_sources(allowed)
+            selected = 0
         elif key == "esc":
             paint()
             return PickerResult(None, False)
@@ -112,6 +122,7 @@ def render_frame(
     rows: int = 20,
     width: int | None = None,
     show_id: bool = False,
+    sources: set[str] | None = None,
 ) -> str:
     frame_width = _frame_width(width)
     start = 0
@@ -122,7 +133,7 @@ def render_frame(
         frame_width, [chat.workspace_name for chat in window]
     )
     rule = "-" * frame_width
-    lines = [_header(scope, frame_width), rule]
+    lines = [_header(scope, frame_width), _source_line(sources), rule]
     if not window:
         lines.append("(no chats)")
     for offset, chat in enumerate(window):
@@ -133,13 +144,15 @@ def render_frame(
             + "  "
             + _fit(chat.workspace_name, workspace_width)
             + "  "
+            + _fit(chat.source_label, SOURCE_WIDTH)
+            + "  "
             + _fit_right(chat.updated_label, TIME_WIDTH)
         )
     count = len(chats)
     index = (selected + 1) if count else 0
     lines.append(rule)
     lines.append(
-        f"{index}/{count}  up/down move  left/right scope  Enter names the file  Esc closes  i id"
+        f"{index}/{count}  up/down move  left/right scope  Enter names the file  Esc closes  i id  s source"
     )
     lines.append(f"theme: {theme}")
     if show_id and chats and 0 <= selected < len(chats):
@@ -195,11 +208,37 @@ def _frame_width(width: int | None) -> int:
 def _column_widths(frame_width: int, workspace_names: list[str]) -> tuple[int, int]:
     longest = max((len(name) for name in workspace_names), default=0)
     workspace = min(WORKSPACE_CAP, longest)
-    title = frame_width - 2 - 2 - workspace - 2 - TIME_WIDTH
+    title = frame_width - 2 - 2 - workspace - 2 - SOURCE_WIDTH - 2 - TIME_WIDTH
     if title < 1:
-        workspace = max(0, frame_width - 2 - 2 - 1 - 2 - TIME_WIDTH)
-        title = max(0, frame_width - 2 - 2 - workspace - 2 - TIME_WIDTH)
+        workspace = max(0, frame_width - 2 - 2 - 1 - 2 - SOURCE_WIDTH - 2 - TIME_WIDTH)
+        title = max(0, frame_width - 2 - 2 - workspace - 2 - SOURCE_WIDTH - 2 - TIME_WIDTH)
     return title, workspace
+
+
+def _cycle_sources(allowed: set[str] | None) -> set[str] | None:
+    ids = [item.id for item in SESSION_SOURCES]
+    if not ids:
+        return None
+    if allowed is None or set(ids) <= allowed:
+        return {ids[0]}
+    if len(allowed) == 1:
+        current = next(iter(allowed))
+        if current in ids:
+            index = ids.index(current) + 1
+            if index < len(ids):
+                return {ids[index]}
+            return None
+    return None
+
+
+def _source_line(sources: set[str] | None) -> str:
+    allowed = set(sources) if sources is not None else {item.id for item in SESSION_SOURCES}
+    every = {item.id for item in SESSION_SOURCES} <= allowed
+    parts = ["All sources *" if every else "All sources"]
+    for item in SESSION_SOURCES:
+        marked = item.id in allowed and not every
+        parts.append(f"{item.filter_label} *" if marked else item.filter_label)
+    return "    ".join(parts)
 
 
 def _header(scope: str, frame_width: int) -> str:

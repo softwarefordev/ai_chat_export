@@ -11,6 +11,7 @@ from unittest import mock
 from ai_chat_export.__main__ import export_with_picker
 from ai_chat_export.catalog import Chat, load_catalog
 from ai_chat_export.picker import (
+    SOURCE_WIDTH,
     TIME_WIDTH,
     render_frame,
     run_picker,
@@ -19,7 +20,7 @@ from ai_chat_export.picker import (
 from tests.support import sample_messages, write_chat
 
 
-def _chat(title: str, workspace: str, chat_id: str, moment: datetime) -> Chat:
+def _chat(title: str, workspace: str, chat_id: str, moment: datetime, source: str = "cli") -> Chat:
     return Chat(
         id=chat_id,
         title=title,
@@ -28,6 +29,7 @@ def _chat(title: str, workspace: str, chat_id: str, moment: datetime) -> Chat:
         updated_at_ms=int(moment.timestamp() * 1000),
         has_store=True,
         path=Path("."),
+        source=source,
     )
 
 
@@ -66,7 +68,7 @@ class PickerTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _frames(self, keys, theme="terminal-dark", width=80, extension=".html"):
+    def _frames(self, keys, theme="terminal-dark", width=80, extension=".html", sources=None):
         frames: list[str] = []
         result = run_picker(
             self.chats,
@@ -76,17 +78,19 @@ class PickerTests(unittest.TestCase):
             frames.append,
             width=width,
             extension=extension,
+            sources=sources,
         )
         return result, frames
 
     def test_columns_share_workspace_and_time_at_an_explicit_width(self):
         width = 72
-        short = _chat("Map", "SoggyMapMaker", "short", datetime(2026, 9, 1, 9, 5))
+        short = _chat("Map", "SoggyMapMaker", "short", datetime(2026, 9, 1, 9, 5), source="ide")
         long_title = _chat("T" * 80, "SpiralBench", "long", datetime(2026, 8, 15, 16, 42))
         frame = render_frame([long_title, short], 0, "all", "terminal-dark", width=width)
         lines = frame.splitlines()
-        header, rule, first, second = lines[0], lines[1], lines[2], lines[3]
+        header, source, rule, first, second = lines[0], lines[1], lines[2], lines[3], lines[4]
         self.assertEqual(rule, "-" * width)
+        self.assertIn("All sources", source)
         self.assertEqual(lines[-3], "-" * width)
         self.assertEqual(len(header), width)
         self.assertEqual(header[-TIME_WIDTH:], "Last updated".rjust(TIME_WIDTH))
@@ -100,11 +104,16 @@ class PickerTests(unittest.TestCase):
         workspace_at = first.index("SpiralBench")
         self.assertEqual(second.index("SoggyMapMaker"), workspace_at)
         self.assertLess(workspace_at, width - TIME_WIDTH)
+        source_at = first.index("Cu-CLI")
+        self.assertEqual(first[source_at : source_at + SOURCE_WIDTH], "Cu-CLI")
+        self.assertEqual(second.index("Cu-IDE"), source_at)
+        self.assertLess(workspace_at, source_at)
+        self.assertLess(source_at, width - TIME_WIDTH)
 
         wide_workspace = _chat("Title", "W" * 40, "wide", datetime(2026, 8, 15, 16, 42))
         wide = render_frame([wide_workspace], 0, "workspace", "terminal-dark", width=width)
-        row = wide.splitlines()[2]
-        cell = row[-(TIME_WIDTH + 2 + 24) : -(TIME_WIDTH + 2)]
+        row = wide.splitlines()[3]
+        cell = row[-(TIME_WIDTH + 2 + SOURCE_WIDTH + 2 + 24) : -(TIME_WIDTH + 2 + SOURCE_WIDTH + 2)]
         self.assertEqual(cell, ("W" * 21) + "...")
         self.assertIn("This workspace *", wide.splitlines()[0])
 
@@ -430,6 +439,89 @@ class PickerTests(unittest.TestCase):
         self.assertIn("\x1b[?25h", stdout.getvalue())
         self.assertIn("\x1b[0 q", stdout.getvalue())
         termios.tcsetattr.assert_called_once_with(sys.stdin.fileno(), 1, ["saved-attributes"])
+
+    def test_source_key_cycles_and_composes_with_workspace(self):
+        _, frames = self._frames(["s", "s", "S"])
+        self.assertIn("s source", frames[0])
+        self.assertIn("i id", frames[0])
+        self.assertIn("Enter names the file", frames[0])
+        self.assertIn("All sources *", frames[0])
+        self.assertIn("Cursor-CLI *", frames[1])
+        self.assertNotIn("All sources *", frames[1])
+        self.assertIn("Cursor-IDE *", frames[2])
+        self.assertIn("All sources *", frames[3])
+
+        _, shifted = self._frames(["down", "s"])
+        self.assertIn("> Fantasy Map Maker", shifted[-1])
+        self.assertNotIn("> Apply Opsx", shifted[-1])
+
+        ide = Chat(
+            id="ide-here",
+            title="River",
+            cwd=str(self.launch),
+            workspace_name="SoggyMapMaker",
+            updated_at_ms=int(datetime(2026, 9, 1, 9, 5).timestamp() * 1000),
+            has_store=True,
+            path=self.launch,
+            source="ide",
+        )
+        cli = Chat(
+            id="cli-here",
+            title="Map",
+            cwd=str(self.launch),
+            workspace_name="SoggyMapMaker",
+            updated_at_ms=int(datetime(2026, 8, 1, 9, 5).timestamp() * 1000),
+            has_store=True,
+            path=self.launch,
+            source="cli",
+        )
+        elsewhere = Chat(
+            id="cli-there",
+            title="Bench",
+            cwd=str(self.other),
+            workspace_name="SpiralBench",
+            updated_at_ms=int(datetime(2026, 7, 1, 9, 5).timestamp() * 1000),
+            has_store=True,
+            path=self.other,
+            source="cli",
+        )
+        mixed: list[str] = []
+        run_picker(
+            [ide, cli, elsewhere],
+            "terminal-dark",
+            ["s", "right"],
+            str(self.launch),
+            mixed.append,
+            width=80,
+        )
+        self.assertIn("Cursor-CLI *", mixed[-1])
+        self.assertIn("This workspace *", mixed[-1])
+        self.assertIn("> Map", mixed[-1])
+        self.assertNotIn("River", mixed[-1])
+        self.assertNotIn("Bench", mixed[-1])
+
+        typed, named = self._frames(["enter", "s", "down"])
+        self.assertIsNone(typed.chat_id)
+        self.assertIn("file: Fantasy Map Maker.htmls", named[-1])
+        self.assertIn("All sources *", named[-1])
+        self.assertIn("> Fantasy Map Maker", named[-1])
+
+        empty: list[str] = []
+        result = run_picker(
+            [ide],
+            "terminal-dark",
+            ["enter"],
+            str(self.launch),
+            empty.append,
+            width=80,
+            sources={"cli"},
+        )
+        self.assertIsNone(result.chat_id)
+        self.assertIsNone(result.file_name)
+        self.assertIn("(no chats)", empty[-1])
+
+        _, subset = self._frames(["s"], sources={"cli", "later"})
+        self.assertIn("All sources *", subset[-1])
 
 
 if __name__ == "__main__":

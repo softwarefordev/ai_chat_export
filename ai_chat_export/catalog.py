@@ -11,6 +11,36 @@ from pathlib import Path
 
 
 @dataclass(frozen=True)
+class SessionSource:
+    id: str
+    argument: str
+    filter_label: str
+    column: str
+
+
+SESSION_SOURCES: tuple[SessionSource, ...] = (
+    SessionSource("cli", "cursor-cli", "Cursor-CLI", "Cu-CLI"),
+    SessionSource("ide", "cursor-ide", "Cursor-IDE", "Cu-IDE"),
+)
+
+
+def column_label(source_id: str) -> str:
+    for item in SESSION_SOURCES:
+        if item.id == source_id:
+            return item.column
+    return source_id
+
+
+def allowed_sources(arguments: list[str] | None) -> set[str] | None:
+    if not arguments:
+        return None
+    chosen = {item.id for item in SESSION_SOURCES if item.argument in arguments}
+    if {item.id for item in SESSION_SOURCES} <= chosen:
+        return None
+    return chosen
+
+
+@dataclass(frozen=True)
 class Chat:
     id: str
     title: str | None
@@ -19,6 +49,7 @@ class Chat:
     updated_at_ms: int
     has_store: bool
     path: Path
+    source: str = "cli"
 
     @property
     def display_title(self) -> str:
@@ -29,6 +60,10 @@ class Chat:
     @property
     def updated_label(self) -> str:
         return format_timestamp(self.updated_at_ms)
+
+    @property
+    def source_label(self) -> str:
+        return column_label(self.source)
 
 
 def format_timestamp(updated_at_ms: int) -> str:
