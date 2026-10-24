@@ -53,7 +53,8 @@ def render_html(
     theme: str = "dark",
 ) -> str:
     palette = _LIGHT if theme == "light" else _DARK
-    css = _stylesheet(palette)
+    turns = sum(block.kind == "you" for block in transcript.blocks)
+    css = _stylesheet(palette, turns)
     sections = _sections(transcript.blocks)
     navigator = _navigator(transcript.blocks)
     footer = _footer(transcript.footer)
@@ -88,9 +89,8 @@ def render_assistant(text: str) -> str:
     return _blocks(text)
 
 
-def _stylesheet(palette: dict[str, str]) -> str:
-    return "\n".join(
-        [
+def _stylesheet(palette: dict[str, str], turns: int) -> str:
+    rules = [
             ":root {",
             f"  --bg: {palette['bg']};",
             f"  --text: {palette['text']};",
@@ -123,8 +123,13 @@ def _stylesheet(palette: dict[str, str]) -> str:
             'nav { position: sticky; top: 0; overflow: auto; max-height: 40vh; background: var(--bg); border-bottom: 1px solid var(--rule); padding: 0.8rem 1.2rem; font-family: "Segoe UI", system-ui, sans-serif; }',
             "nav ol { list-style: none; margin: 0; padding: 0; }",
             "nav a { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; color: var(--text); text-decoration: none; }",
+            "nav li { display: flex; align-items: flex-start; gap: 0.5rem; }",
             "nav .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }",
             "nav .time { font-size: 10px; white-space: nowrap; }",
+            "nav button { display: none; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--rule); }",
+            "body:has(nav input:checked) nav button { display: block; }",
+            "nav form > button:first-child { position: sticky; top: 0; z-index: 1; }",
+            "body:has(nav input:checked) article section { display: none; }",
             "@media (min-width: 70rem) {",
             "  body { display: grid; grid-template-columns: 30rem minmax(0, 1fr); align-items: start; }",
             "  nav { max-height: 100vh; border-bottom: 0; border-right: 1px solid var(--rule); }",
@@ -134,19 +139,30 @@ def _stylesheet(palette: dict[str, str]) -> str:
             "code { font-family: Consolas, ui-monospace, monospace; }",
             "footer { color: var(--muted); font-size: 0.9rem; }",
             "img { max-width: 100%; }",
-        ]
-    )
+    ]
+    for number in range(1, turns + 1):
+        rules.append(
+            "body:has(#keep-"
+            f'{number}:checked) article [data-turn="{number}"] {{ display: block; }}'
+        )
+    return "\n".join(rules)
 
 
 def _sections(blocks: list[Block]) -> str:
     rendered: list[str] = []
     number = 0
+    turn = 0
     for block in blocks:
         anchor = ""
+        mark = 0
         if block.kind == "you":
             number += 1
+            turn = number
             anchor = f"user-{number}"
-        rendered.append(_section(block, anchor))
+            mark = turn
+        elif block.kind == "agent" and turn:
+            mark = turn
+        rendered.append(_section(block, anchor, mark))
     return "\n".join(rendered)
 
 
@@ -162,10 +178,24 @@ def _navigator(blocks: list[Block]) -> str:
             stamp = f'<span class="time">{html.escape(_compact_nav_time(block.timestamp))}</span>'
         label = html.escape(_nav_label(block))
         items.append(
-            f'<li><a href="#user-{number}">{stamp}<span class="label">{label}</span></a></li>'
+            "<li>"
+            f'<input type="checkbox" id="keep-{number}">'
+            f'<a href="#user-{number}">{stamp}<span class="label">{label}</span></a>'
+            "</li>"
         )
     body = "\n".join(items)
-    return f"<nav>\n<ol>\n{body}\n</ol>\n</nav>\n"
+    clear = '<button type="reset">Clear filter</button>'
+    return (
+        "<nav>\n"
+        "<form>\n"
+        f"{clear}\n"
+        "<ol>\n"
+        f"{body}\n"
+        "</ol>\n"
+        f"{clear}\n"
+        "</form>\n"
+        "</nav>\n"
+    )
 
 
 def _compact_nav_time(stamp: str) -> str:
@@ -200,7 +230,7 @@ def _nav_label(block: Block) -> str:
     return "User"
 
 
-def _section(block: Block, anchor: str = "") -> str:
+def _section(block: Block, anchor: str = "", turn: int = 0) -> str:
     heading = _HEADINGS.get(block.kind, block.kind)
     if block.pieces:
         body = "\n".join(_piece_html(piece) for piece in block.pieces)
@@ -213,8 +243,9 @@ def _section(block: Block, anchor: str = "") -> str:
         images = "\n".join(_image_html(media, data) for media, data in block.images)
         body = "\n".join(part for part in (prose, detail, captions, images) if part)
     ident = f' id="{html.escape(anchor)}"' if anchor else ""
+    mark = f' data-turn="{turn}"' if turn else ""
     return (
-        f'<section class="{html.escape(block.kind)}"{ident}>\n'
+        f'<section class="{html.escape(block.kind)}"{ident}{mark}>\n'
         f"<h2>{_heading(block, heading)}</h2>\n"
         f"{body}\n"
         "</section>"

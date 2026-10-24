@@ -168,7 +168,7 @@ class DocumentTests(unittest.TestCase):
             self.assertIn("section.agent { background: var(--agent); }", page)
             self.assertIn("section.system, section.context { background: var(--panel); }", page)
             self.assertIn('<section class="you"', page)
-            self.assertIn('<section class="agent">', page)
+            self.assertIn('<section class="agent" data-turn="1">', page)
             self.assertIn('<section class="system">', page)
 
     def test_navigator_links_user_turns_and_clips_the_first_line(self):
@@ -276,6 +276,102 @@ class DocumentTests(unittest.TestCase):
         self.assertIn("grid-template-columns: 30rem minmax(0, 1fr);", page)
         self.assertNotIn("16rem", page)
         self.assertNotIn("52rem", page)
+
+    def test_turn_mark_groups_the_user_and_following_agent(self):
+        transcript = Transcript(
+            blocks=[
+                Block("system", text="Preamble"),
+                Block("you", text="First"),
+                Block("agent", text="Reply one"),
+                Block("context", text="Injected"),
+                Block("agent", text="Reply two"),
+                Block("you", text="Second"),
+                Block("you", text="Third"),
+                Block("agent", text="Reply three"),
+            ]
+        )
+        page = render_html(transcript, **self.meta)
+        article = page.split("<article>", 1)[1]
+        self.assertIn('<section class="you" id="user-1" data-turn="1">', article)
+        self.assertEqual(article.count('data-turn="1"'), 3)
+        self.assertIn('<section class="you" id="user-2" data-turn="2">', article)
+        self.assertEqual(article.count('data-turn="2"'), 1)
+        self.assertIn('<section class="you" id="user-3" data-turn="3">', article)
+        self.assertIn('<section class="agent" data-turn="3">', article)
+        self.assertEqual(article.count('data-turn="3"'), 2)
+        self.assertIn('<section class="system">', article)
+        self.assertIn('<section class="context">', article)
+        self.assertNotIn('class="system" data-turn', article)
+        self.assertNotIn('class="context" data-turn', article)
+
+    def test_checkbox_sits_beside_an_unchecked_link(self):
+        transcript = Transcript(
+            blocks=[
+                Block("you", text="First line\nLater line"),
+                Block("agent", text="Reply"),
+            ]
+        )
+        page = render_html(transcript, **self.meta)
+        nav = page.split("<nav>", 1)[1].split("</nav>", 1)[0]
+        item = nav.split("<li>", 1)[1].split("</li>", 1)[0]
+        self.assertLess(item.index('type="checkbox"'), item.index("<a "))
+        self.assertIn('id="keep-1"', item)
+        self.assertIn('href="#user-1"', item)
+        self.assertNotIn("<input", item.split("<a ", 1)[1])
+        self.assertNotRegex(page, r"<input[^>]*\bchecked\b")
+        self.assertIn('<a href="#user-1">', nav)
+        self.assertNotIn("<script", page.lower())
+        self.assertNotIn("http", page.lower())
+
+    def test_filter_rules_keep_the_title_and_footer(self):
+        transcript = Transcript(
+            blocks=[
+                Block("you", text="First"),
+                Block("agent", text="Reply"),
+                Block("you", text="Second"),
+                Block("you", text="Third"),
+            ],
+            footer=["Kept note"],
+        )
+        page = render_html(transcript, **self.meta)
+        hide = "body:has(nav input:checked) article section { display: none; }"
+        self.assertIn(hide, page)
+        self.assertNotIn("header", hide)
+        self.assertNotIn("footer", hide)
+        for number in (1, 2, 3):
+            self.assertIn(
+                "body:has(#keep-"
+                f'{number}:checked) article [data-turn="{number}"] {{ display: block; }}',
+                page,
+            )
+        self.assertIn("<header>", page)
+        self.assertIn("<h1>Fantasy Map Maker</h1>", page)
+        self.assertIn("<footer>", page)
+        self.assertIn("Kept note", page)
+
+    def test_clear_filter_sits_at_both_ends(self):
+        transcript = Transcript(blocks=[Block("you", text="First"), Block("you", text="Second")])
+        page = render_html(transcript, **self.meta)
+        nav = page.split("<nav>", 1)[1].split("</nav>", 1)[0]
+        button = '<button type="reset">Clear filter</button>'
+        self.assertEqual(nav.count(button), 2)
+        self.assertLess(nav.index(button), nav.index("<ol>"))
+        self.assertGreater(nav.rindex(button), nav.index("</ol>"))
+        self.assertIn(
+            "nav button { display: none; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--rule); }",
+            page,
+        )
+        self.assertIn("body:has(nav input:checked) nav button { display: block; }", page)
+        self.assertIn("nav form > button:first-child { position: sticky; top: 0; z-index: 1; }", page)
+
+    def test_markdown_has_no_turn_filter(self):
+        transcript = Transcript(
+            blocks=[Block("you", text="Prompt"), Block("agent", text="Reply")]
+        )
+        markdown = render_markdown(transcript, **self.meta)
+        self.assertNotIn("checkbox", markdown)
+        self.assertNotIn("Clear filter", markdown)
+        self.assertIn("## User", markdown)
 
     def test_linked_image_is_embedded(self):
         transcript = Transcript(
