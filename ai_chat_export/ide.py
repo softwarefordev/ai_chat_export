@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 
 from ai_chat_export.catalog import Chat, load_catalog, workspace_folder
-from ai_chat_export.copilot import load_copilot_catalog
+from ai_chat_export.copilot import load_copilot_catalog, load_unlisted_session_logs
+from ai_chat_export.copilot_ide import (
+    load_copilot_ide_catalog,
+    load_vscode_agent_sessions,
+    load_vscode_catalog,
+)
 from ai_chat_export.store import Conversation
 from ai_chat_export.transcript import element_texts, query_text
 
@@ -16,16 +21,37 @@ def load_sessions(
     projects_root: Path | None = None,
     warnings: list[str] | None = None,
     copilot_root: Path | None = None,
+    vscode_root: Path | None = None,
+    copilot_ide_root: Path | None = None,
+    include_empty: bool = False,
 ) -> list[Chat]:
     notes = warnings if warnings is not None else []
     chats = load_catalog(chats_root, notes)
-    if projects_root is None and copilot_root is None:
+    if (
+        projects_root is None
+        and copilot_root is None
+        and vscode_root is None
+        and copilot_ide_root is None
+    ):
         return chats
     if projects_root is not None:
         known = {chat.id for chat in chats}
         chats = chats + [row for row in load_ide_catalog(projects_root, notes) if row.id not in known]
     if copilot_root is not None:
         chats = chats + load_copilot_catalog(copilot_root, notes)
+    if vscode_root is not None:
+        chats = chats + load_vscode_catalog(vscode_root, notes, include_empty)
+    if copilot_ide_root is not None:
+        chats = chats + load_copilot_ide_catalog(
+            copilot_ide_root, notes, include_empty, events_root=copilot_root
+        )
+    if vscode_root is not None and copilot_root is not None:
+        chats = chats + load_vscode_agent_sessions(
+            vscode_root, copilot_root, notes, include_empty
+        )
+    if copilot_root is not None:
+        known = {chat.id for chat in chats}
+        chats = chats + load_unlisted_session_logs(copilot_root, known, notes)
     chats.sort(key=lambda chat: (chat.updated_at_ms, chat.id), reverse=True)
     return chats
 

@@ -41,6 +41,7 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("cursor-cli", completed.stdout)
         self.assertIn("cursor-ide", completed.stdout)
         self.assertIn("copilot-cli", completed.stdout)
+        self.assertIn("copilot-ide", completed.stdout)
         readme = Path(__file__).resolve().parents[1].joinpath("README.md").read_text(encoding="utf-8")
         self.assertTrue(readme.startswith("# ai-chat-export\n"))
         self.assertIn("ai-chat-export", readme)
@@ -72,6 +73,17 @@ class EndToEndTests(unittest.TestCase):
         self.assertIn("Copilot-CLI", readme)
         self.assertIn("Cp-CLI", readme)
         self.assertIn("--copilot-root", readme)
+        self.assertIn("Copilot-IDE", readme)
+        self.assertIn("Cp-IDE", readme)
+        self.assertIn("copilot-ide", readme)
+        self.assertIn("Cursor", readme)
+        self.assertIn("Copilot", readme)
+        self.assertIn("Export Cursor and Copilot sessions", project)
+        instructions = (
+            Path(__file__).resolve().parents[1].joinpath(".github", "copilot-instructions.md").read_text(encoding="utf-8")
+        )
+        self.assertIn("Cursor", instructions)
+        self.assertIn("Copilot", instructions)
         self.assertNotIn("writes nothing", readme)
 
     def test_former_theme_names_are_rejected(self):
@@ -127,6 +139,10 @@ class EndToEndTests(unittest.TestCase):
                         str(root / "no-projects"),
                         "--copilot-root",
                         str(root / "no-copilot"),
+                        "--vscode-root",
+                        str(root / "no-vscode"),
+                        "--copilot-ide-root",
+                        str(root / "no-copilot-ide"),
                     ]
                 )
             self.assertEqual(code, 0)

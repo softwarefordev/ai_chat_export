@@ -294,6 +294,9 @@ def caption(part: dict) -> str:
     if name == "Create":
         path = str(args.get("path") or "")
         return f"Create {path}".rstrip()
+    if name == "Edit":
+        path = str(args.get("path") or "")
+        return f"Edit {path}".rstrip()
     return name
 
 

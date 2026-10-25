@@ -70,6 +70,87 @@ def load_copilot_catalog(root: Path, warnings: list[str] | None = None) -> list[
     return rows
 
 
+def load_unlisted_session_logs(
+    root: Path,
+    skip: set[str],
+    warnings: list[str] | None = None,
+) -> list[Chat]:
+    notes = warnings if warnings is not None else []
+    state = Path(root) / "session-state"
+    if not state.is_dir():
+        return []
+    rows: list[Chat] = []
+    for child in state.iterdir():
+        if not child.is_dir() or child.name.startswith(".") or child.name in skip:
+            continue
+        chat = session_from_events(child, notes, source="cp-cli")
+        if chat is not None:
+            rows.append(chat)
+    return rows
+
+
+def session_from_events(
+    directory: Path,
+    warnings: list[str] | None = None,
+    source: str = "cp-cli",
+) -> Chat | None:
+    notes = warnings if warnings is not None else []
+    log = Path(directory) / "events.jsonl"
+    if not log.is_file():
+        return None
+    cwd = ""
+    first_line = ""
+    latest = ""
+    has_turn = False
+    try:
+        for line in log.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            stamp = obj.get("timestamp")
+            if isinstance(stamp, str) and stamp.strip():
+                latest = stamp
+            kind = obj.get("type")
+            data = obj.get("data") if isinstance(obj.get("data"), dict) else {}
+            if kind == "session.start" and not cwd:
+                context = data.get("context")
+                if isinstance(context, dict) and isinstance(context.get("cwd"), str):
+                    cwd = context["cwd"]
+            elif kind == "user.message":
+                text = _event_text(data.get("content"))
+                if text:
+                    has_turn = True
+                    if not first_line:
+                        first_line = text.splitlines()[0].strip()
+            elif kind == "assistant.message" and _event_text(data.get("content")):
+                has_turn = True
+    except (OSError, UnicodeError) as exc:
+        notes.append(f"Unreadable Copilot events {directory.name}: {exc}")
+        return None
+    if not has_turn:
+        return None
+    updated_ms, time_label = _updated(latest)
+    if not updated_ms:
+        updated_ms = int(log.stat().st_mtime * 1000)
+        time_label = None
+    return Chat(
+        id=directory.name,
+        title=first_line or None,
+        cwd=cwd,
+        workspace_name=workspace_folder(cwd) if cwd else "",
+        updated_at_ms=updated_ms,
+        has_store=True,
+        path=directory,
+        source=source,
+        time_label=time_label,
+    )
+
+
 def _first_lines(turns: list[tuple]) -> dict[str, str]:
     lines: dict[str, str] = {}
     ordered = sorted(turns, key=lambda row: (row[0], row[1] if isinstance(row[1], int) else 0))

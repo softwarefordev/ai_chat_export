@@ -441,17 +441,19 @@ class PickerTests(unittest.TestCase):
         termios.tcsetattr.assert_called_once_with(sys.stdin.fileno(), 1, ["saved-attributes"])
 
     def test_source_key_cycles_and_composes_with_workspace(self):
-        _, frames = self._frames(["s", "s", "s", "S"])
+        _, frames = self._frames(["s", "s", "s", "s", "S"])
         self.assertIn("s source", frames[0])
         self.assertIn("i id", frames[0])
         self.assertIn("Enter names the file", frames[0])
         self.assertIn("Copilot-CLI", frames[0])
+        self.assertIn("Copilot-IDE", frames[0])
         self.assertIn("All sources *", frames[0])
         self.assertIn("Cursor-CLI *", frames[1])
         self.assertNotIn("All sources *", frames[1])
         self.assertIn("Cursor-IDE *", frames[2])
         self.assertIn("Copilot-CLI *", frames[3])
-        self.assertIn("All sources *", frames[4])
+        self.assertIn("Copilot-IDE *", frames[4])
+        self.assertIn("All sources *", frames[5])
 
         _, flagged = self._frames(["s"], sources={"cli"})
         self.assertIn("Cursor-CLI *", flagged[0])
@@ -516,9 +518,19 @@ class PickerTests(unittest.TestCase):
             path=self.launch,
             source="cp-cli",
         )
+        copilot_ide = Chat(
+            id="cp-ide-here",
+            title="Ide copilot",
+            cwd=str(self.launch),
+            workspace_name="SoggyMapMaker",
+            updated_at_ms=int(datetime(2026, 5, 1, 9, 5).timestamp() * 1000),
+            has_store=True,
+            path=self.launch,
+            source="cp-ide",
+        )
         subset: list[str] = []
         run_picker(
-            [ide, cli, copilot],
+            [ide, cli, copilot, copilot_ide],
             "terminal-dark",
             ["s"],
             str(self.launch),
@@ -530,7 +542,9 @@ class PickerTests(unittest.TestCase):
         self.assertIn("Cursor-IDE *", subset[0])
         self.assertNotIn("All sources *", subset[0])
         self.assertNotIn("Copilot-CLI *", subset[0])
+        self.assertNotIn("Copilot-IDE *", subset[0])
         self.assertNotIn("Copilot row", subset[0])
+        self.assertNotIn("Ide copilot", subset[0])
         self.assertIn("All sources *", subset[-1])
 
         typed, named = self._frames(["enter", "s", "down"])

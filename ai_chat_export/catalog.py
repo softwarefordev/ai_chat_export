@@ -22,6 +22,7 @@ SESSION_SOURCES: tuple[SessionSource, ...] = (
     SessionSource("cli", "cursor-cli", "Cursor-CLI", "Cu-CLI"),
     SessionSource("ide", "cursor-ide", "Cursor-IDE", "Cu-IDE"),
     SessionSource("cp-cli", "copilot-cli", "Copilot-CLI", "Cp-CLI"),
+    SessionSource("cp-ide", "copilot-ide", "Copilot-IDE", "Cp-IDE"),
 )
 
 

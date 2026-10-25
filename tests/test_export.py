@@ -78,6 +78,10 @@ class ExportTests(unittest.TestCase):
                         str(self.root / "no-projects"),
                         "--copilot-root",
                         str(self.root / "no-copilot"),
+                        "--vscode-root",
+                        str(self.root / "no-vscode"),
+                        "--copilot-ide-root",
+                        str(self.root / "no-copilot-ide"),
                     ]
                 )
         finally:
@@ -214,6 +218,10 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "no-projects"),
                     "--copilot-root",
                     str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                 ]
             )
         self.assertEqual(cli, 0)
@@ -297,6 +305,10 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "no-projects"),
                     "--copilot-root",
                     str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                 ]
             )
         self.assertEqual(cli, 0)
@@ -657,6 +669,10 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "projects"),
                     "--copilot-root",
                     str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                     "--out",
                     str(self.out),
                 ]
@@ -741,6 +757,10 @@ class ExportTests(unittest.TestCase):
                         str(self.root / "projects"),
                         "--copilot-root",
                         str(self.root / "no-copilot"),
+                        "--vscode-root",
+                        str(self.root / "no-vscode"),
+                        "--copilot-ide-root",
+                        str(self.root / "no-copilot-ide"),
                         "--out",
                         str(unknown),
                     ]
@@ -764,6 +784,10 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "projects"),
                     "--copilot-root",
                     str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                     "--out",
                     str(self.out),
                 ]
@@ -787,6 +811,10 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "projects"),
                     "--copilot-root",
                     str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                     "--out",
                     str(rejected),
                 ]
@@ -831,6 +859,10 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "projects"),
                     "--copilot-root",
                     str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                     "--out",
                     str(self.out),
                 ]
@@ -859,6 +891,10 @@ class ExportTests(unittest.TestCase):
                     str(self.root / "projects"),
                     "--copilot-root",
                     str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                     "--out",
                     str(self.out),
                 ]
@@ -906,6 +942,10 @@ class ExportTests(unittest.TestCase):
                         str(projects),
                         "--copilot-root",
                         str(root),
+                        "--vscode-root",
+                        str(self.root / "no-vscode"),
+                        "--copilot-ide-root",
+                        str(self.root / "no-copilot-ide"),
                         "--out",
                         str(unknown),
                     ]
@@ -945,6 +985,10 @@ class ExportTests(unittest.TestCase):
                     str(projects),
                     "--copilot-root",
                     str(root),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                     "--out",
                     str(self.out),
                 ]
@@ -970,6 +1014,134 @@ class ExportTests(unittest.TestCase):
                     str(projects),
                     "--copilot-root",
                     str(root),
+                    "--vscode-root",
+                    str(self.root / "no-vscode"),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
+                    "--out",
+                    str(rejected),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("Chat not found", stderr.getvalue())
+        self.assertEqual(list(rejected.iterdir()), [])
+
+    def test_copilot_ide_source_flag_opens_the_picker_and_excludes_the_id(self):
+        root = self.root / "vscode"
+        _write_vscode_export(
+            root,
+            session_id="vs-1",
+            document={
+                "version": 3,
+                "sessionId": "vs-1",
+                "customTitle": "River map",
+                "requests": [
+                    {
+                        "message": {"text": "Please add a river."},
+                        "response": [{"value": "The map is ready."}],
+                    }
+                ],
+            },
+        )
+        self.chats.mkdir()
+        projects = self.root / "projects"
+        projects.mkdir()
+        unknown = self.root / "unknown-out"
+        unknown.mkdir()
+        stderr = io.StringIO()
+        with (
+            mock.patch("ai_chat_export.__main__.load_sessions") as load,
+            contextlib.redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as raised:
+                main(
+                    [
+                        "--source",
+                        "other",
+                        "--id",
+                        "vs-1",
+                        "--chats-root",
+                        str(self.chats),
+                        "--projects-root",
+                        str(projects),
+                        "--copilot-root",
+                        str(self.root / "no-copilot"),
+                        "--vscode-root",
+                        str(root),
+                        "--copilot-ide-root",
+                        str(self.root / "no-copilot-ide"),
+                        "--out",
+                        str(unknown),
+                    ]
+                )
+        self.assertNotEqual(raised.exception.code, 0)
+        load.assert_not_called()
+        self.assertNotIn("Chat not found", stderr.getvalue())
+        self.assertEqual(list(unknown.iterdir()), [])
+
+        calls: list[dict] = []
+
+        def fake(chats, theme, keys, launch, write, **kwargs):
+            frames: list[str] = []
+            result = run_picker(
+                chats,
+                theme,
+                ["s"],
+                launch,
+                frames.append,
+                width=80,
+                sources=kwargs.get("sources"),
+            )
+            calls.append({"sources": kwargs.get("sources"), "frames": frames})
+            return result
+
+        with (
+            mock.patch("ai_chat_export.__main__.run_picker", side_effect=fake),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            code = main(
+                [
+                    "--source",
+                    "copilot-ide",
+                    "--chats-root",
+                    str(self.chats),
+                    "--projects-root",
+                    str(projects),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(root),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
+                    "--out",
+                    str(self.out),
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(calls[0]["sources"], {"cp-ide"})
+        self.assertIn("Copilot-IDE *", calls[0]["frames"][0])
+        self.assertIn("River map", calls[0]["frames"][0])
+
+        rejected = self.root / "rejected"
+        rejected.mkdir()
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = main(
+                [
+                    "--id",
+                    "vs-1",
+                    "--source",
+                    "cursor-cli",
+                    "--chats-root",
+                    str(self.chats),
+                    "--projects-root",
+                    str(projects),
+                    "--copilot-root",
+                    str(self.root / "no-copilot"),
+                    "--vscode-root",
+                    str(root),
+                    "--copilot-ide-root",
+                    str(self.root / "no-copilot-ide"),
                     "--out",
                     str(rejected),
                 ]
@@ -1213,6 +1385,264 @@ class ExportTests(unittest.TestCase):
         self.assertIn("SYSTEM-ONLY", verbose_page)
         self.assertNotIn("SECRET-ENCRYPTED", verbose_page)
         self.assertNotIn("secret-command-text", verbose_page)
+
+    def test_copilot_ide_id_writes_the_turn_text(self):
+        root = self.root / "vscode"
+        path = _write_vscode_export(
+            root,
+            session_id="vs-1",
+            document={
+                "version": 3,
+                "sessionId": "vs-1",
+                "customTitle": "River map",
+                "requesterAvatarIconUri": "icon:requester-avatar",
+                "responderAvatarIconUri": "icon:responder-avatar",
+                "requests": [
+                    {
+                        "message": {"text": "Please add a river."},
+                        "response": [
+                            {"value": "The map is ready."},
+                            {"value": "The legend is drawn."},
+                            {"value": "   "},
+                        ],
+                    },
+                    {
+                        "message": {"text": "Add a lake."},
+                        "response": [{"value": "The lake is marked."}],
+                    },
+                ],
+            },
+        )
+        before = path.read_bytes()
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            vscode_root=root,
+            chat_id="vs-1",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+        )
+        page = (self.out / "River map.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn("Please add a river.", page)
+        self.assertIn("The map is ready.", page)
+        self.assertIn("The legend is drawn.", page)
+        self.assertIn("Add a lake.", page)
+        self.assertIn("The lake is marked.", page)
+        self.assertEqual(page.count(">Agent<"), 2)
+        self.assertNotIn("icon:requester-avatar", page)
+        self.assertNotIn("icon:responder-avatar", page)
+        self.assertNotIn("Cp-IDE", page)
+        self.assertNotIn("http", page.lower())
+        self.assertEqual(before, path.read_bytes())
+        markdown_out = self.root / "markdown-out"
+        markdown_out.mkdir()
+        md_code = export_session(
+            chats_root=self.root / "missing-chats",
+            vscode_root=root,
+            chat_id="vs-1",
+            out_dir=markdown_out,
+            write_markdown=True,
+            stdout=io.StringIO(),
+        )
+        markdown = (markdown_out / "River map.md").read_text(encoding="utf-8")
+        self.assertEqual(md_code, 0)
+        self.assertIn("Please add a river.", markdown)
+        self.assertIn("The map is ready.", markdown)
+        self.assertEqual(before, path.read_bytes())
+
+    def test_copilot_ide_empty_assistant_has_no_agent_heading(self):
+        root = self.root / "vscode"
+        _write_vscode_export(
+            root,
+            session_id="vs-empty-agent",
+            document={
+                "version": 3,
+                "sessionId": "vs-empty-agent",
+                "customTitle": "Note",
+                "requests": [
+                    {"message": {"text": "Just a note."}, "response": [{"value": ""}]},
+                ],
+            },
+        )
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            vscode_root=root,
+            chat_id="vs-empty-agent",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+        )
+        page = (self.out / "Note.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn("Just a note.", page)
+        self.assertNotIn(">Agent<", page)
+
+    def test_copilot_ide_session_with_no_turns_writes_no_file(self):
+        root = self.root / "vscode"
+        _write_vscode_export(
+            root,
+            session_id="vs-blank",
+            document={
+                "version": 3,
+                "sessionId": "vs-blank",
+                "customTitle": "Blank",
+                "requests": [{"message": {"text": ""}, "response": [{"value": ""}]}],
+            },
+        )
+        stderr = io.StringIO()
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            vscode_root=root,
+            chat_id="vs-blank",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+            stderr=stderr,
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("Chat has no transcript: vs-blank", stderr.getvalue())
+        self.assertEqual(list(self.out.iterdir()), [])
+
+    def test_copilot_ide_rider_text_leaves_bytes(self):
+        from tests.test_catalog import _write_nitrite_session
+
+        root = self.root / "copilot-ide"
+        path = _write_nitrite_session(
+            root,
+            host="rd",
+            session_id="rider-1",
+            user_text="Please add a river.",
+            assistant="The map is ready.",
+            workspace="C:/work/SoggyMapMaker",
+        )
+        before = path.read_bytes()
+        code = export_session(
+            chats_root=self.root / "missing-chats",
+            copilot_ide_root=root,
+            chat_id="rider-1",
+            out_dir=self.out,
+            stdout=io.StringIO(),
+        )
+        page = (self.out / "Please add a river.html").read_text(encoding="utf-8")
+        self.assertEqual(code, 0)
+        self.assertIn("Please add a river.", page)
+        self.assertIn("The map is ready.", page)
+        self.assertEqual(page.count("<h2>Agent</h2>"), 1)
+        self.assertNotIn("Cp-IDE", page)
+        self.assertNotIn("http", page.lower())
+        self.assertEqual(before, path.read_bytes())
+
+    def test_copilot_ide_tools_and_verbose_detail(self):
+        root = self.root / "vscode"
+        _write_vscode_export(
+            root,
+            session_id="vs-tools",
+            document={
+                "version": 3,
+                "sessionId": "vs-tools",
+                "customTitle": "Tools",
+                "requests": [
+                    {
+                        "message": {"text": "Please add a river."},
+                        "response": [
+                            {"value": "The map is ready."},
+                            {"kind": "textEditGroup", "value": "SKIP-TEXT-EDIT"},
+                            {"kind": "inlineReference", "value": "SKIP-INLINE"},
+                            {"kind": "codeblockUri", "value": "SKIP-CODEBLOCK"},
+                            {"kind": "mcpServersStarting"},
+                            {"kind": "undoStop"},
+                            {"kind": "progressTaskSerialized"},
+                            {"kind": "confirmation"},
+                            {
+                                "kind": "toolInvocationSerialized",
+                                "toolId": "copilot_readFile",
+                                "parameters": {"path": "maps/river.txt"},
+                                "result": "TOOL-RESULT-BODY",
+                            },
+                            {
+                                "kind": "toolInvocationSerialized",
+                                "toolId": "copilot_createFile",
+                                "parameters": {"path": "maps/lake.txt"},
+                            },
+                            {
+                                "kind": "toolInvocationSerialized",
+                                "toolId": "copilot_findFiles",
+                                "parameters": {"pattern": "*.map"},
+                            },
+                            {
+                                "kind": "toolInvocationSerialized",
+                                "toolId": "run_in_terminal",
+                                "parameters": {
+                                    "description": "Draw the river",
+                                    "command": "secret-command-text",
+                                },
+                            },
+                            {
+                                "kind": "toolInvocationSerialized",
+                                "toolId": "copilot_replaceString",
+                                "parameters": {"path": "maps/coast.txt"},
+                            },
+                            {
+                                "kind": "toolInvocationSerialized",
+                                "toolId": "copilot_multiReplaceString",
+                                "parameters": {"path": "maps/ridge.txt"},
+                            },
+                            {
+                                "kind": "toolInvocationSerialized",
+                                "toolId": "copilot_listDirectory",
+                                "parameters": {"path": "maps/secret-arg"},
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
+        tools_out = self.root / "tools-out"
+        tools_out.mkdir()
+        tools_code = export_session(
+            chats_root=self.root / "missing-chats",
+            vscode_root=root,
+            chat_id="vs-tools",
+            out_dir=tools_out,
+            show_tools=True,
+            stdout=io.StringIO(),
+        )
+        tools_page = (tools_out / "Tools.html").read_text(encoding="utf-8")
+        self.assertEqual(tools_code, 0)
+        self.assertIn("Read maps/river.txt", tools_page)
+        self.assertIn("Create maps/lake.txt", tools_page)
+        self.assertIn("Glob *.map", tools_page)
+        self.assertIn("Ran Draw the river", tools_page)
+        self.assertIn("Edit maps/coast.txt", tools_page)
+        self.assertIn("Edit maps/ridge.txt", tools_page)
+        self.assertIn("copilot_listDirectory", tools_page)
+        self.assertNotIn("maps/secret-arg", tools_page)
+        self.assertNotIn("TOOL-RESULT-BODY", tools_page)
+        self.assertNotIn("secret-command-text", tools_page)
+        self.assertNotIn("SKIP-TEXT-EDIT", tools_page)
+        self.assertNotIn("SKIP-INLINE", tools_page)
+        self.assertNotIn("SKIP-CODEBLOCK", tools_page)
+        verbose_out = self.root / "verbose-out"
+        verbose_out.mkdir()
+        verbose_code = export_session(
+            chats_root=self.root / "missing-chats",
+            vscode_root=root,
+            chat_id="vs-tools",
+            out_dir=verbose_out,
+            verbose=True,
+            stdout=io.StringIO(),
+        )
+        verbose_page = (verbose_out / "Tools.html").read_text(encoding="utf-8")
+        self.assertEqual(verbose_code, 0)
+        self.assertIn("Read maps/river.txt", verbose_page)
+        self.assertIn("TOOL-RESULT-BODY", verbose_page)
+        self.assertNotIn("secret-command-text", verbose_page)
+
+
+def _write_vscode_export(root: Path, *, session_id: str, document: dict) -> Path:
+    folder = root / "workspaceStorage" / "hash" / "chatSessions"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{session_id}.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path
 
 
 def _write_copilot_session(

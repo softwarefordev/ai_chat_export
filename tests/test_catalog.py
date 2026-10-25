@@ -275,9 +275,11 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue(any("broken" in note for note in warnings))
 
     def test_copilot_column_label(self):
-        self.assertEqual([item.id for item in SESSION_SOURCES], ["cli", "ide", "cp-cli"])
+        self.assertEqual([item.id for item in SESSION_SOURCES], ["cli", "ide", "cp-cli", "cp-ide"])
         self.assertEqual(column_label("cli"), "Cu-CLI")
         self.assertEqual(column_label("ide"), "Cu-IDE")
+        self.assertEqual(column_label("cp-cli"), "Cp-CLI")
+        self.assertEqual(column_label("cp-ide"), "Cp-IDE")
         chat = Chat(
             id="cp-1",
             title="Map",
@@ -290,6 +292,18 @@ class CatalogTests(unittest.TestCase):
         )
         self.assertEqual(chat.source, "cp-cli")
         self.assertEqual(chat.source_label, "Cp-CLI")
+        ide = Chat(
+            id="cp-ide-1",
+            title="Map",
+            cwd="C:/work",
+            workspace_name="work",
+            updated_at_ms=0,
+            has_store=True,
+            path=Path("."),
+            source="cp-ide",
+        )
+        self.assertEqual(ide.source, "cp-ide")
+        self.assertEqual(ide.source_label, "Cp-IDE")
 
     def test_copilot_session_joins_the_list(self):
         write_chat(
@@ -425,6 +439,454 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual([item.id for item in sessions], ["cli-chat"])
         self.assertTrue(any(note.startswith("Unreadable Copilot store:") for note in warnings))
 
+    def test_vscode_session_joins_the_list(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="cli-chat",
+            cwd=str(self.root),
+            title="Older chat",
+            updated_ms=1_000,
+            with_store=False,
+        )
+        launch = self.root / "SoggyMapMaker"
+        launch.mkdir()
+        moment = datetime(2026, 10, 24, 15, 45)
+        _write_vscode_session(
+            self.root / "code-user",
+            session_id="vsc-chat",
+            title="River map",
+            folder_uri=launch.as_uri(),
+            updated_ms=int(moment.timestamp() * 1000),
+            user_text="River map",
+            assistant="The river is mapped.",
+        )
+        draft = self.root / "code-user" / "workspaceStorage" / "hash" / "chatSessions" / "empty.json"
+        draft.write_text(json.dumps({"version": 3, "sessionId": "empty", "requests": []}), encoding="utf-8")
+        sessions = load_sessions(
+            self.root / "chats",
+            self.root / "missing-projects",
+            None,
+            self.root / "missing-copilot",
+            self.root / "code-user",
+        )
+        self.assertEqual([item.id for item in sessions], ["vsc-chat", "cli-chat"])
+        vscode = sessions[0]
+        self.assertEqual(vscode.source, "cp-ide")
+        self.assertEqual(vscode.source_label, "Cp-IDE")
+        self.assertEqual(vscode.display_title, "River map")
+        self.assertEqual(vscode.workspace_name, "SoggyMapMaker")
+        self.assertEqual(vscode.updated_label, format_timestamp(int(moment.timestamp() * 1000)))
+        self.assertEqual(filter_workspace(sessions, str(launch)), [vscode])
+
+    def test_missing_vscode_root_keeps_chats(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="cli-chat",
+            cwd=str(self.root),
+            title="Kept",
+            updated_ms=1_000,
+            with_store=False,
+        )
+        sessions = load_sessions(
+            self.root / "chats",
+            None,
+            None,
+            None,
+            self.root / "missing-vscode",
+        )
+        self.assertEqual([item.id for item in sessions], ["cli-chat"])
+
+    def test_custom_vscode_root_is_the_one_that_is_read(self):
+        _write_vscode_session(
+            self.root / "one",
+            session_id="from-one",
+            title="One",
+            user_text="One",
+            assistant="Ready.",
+        )
+        _write_vscode_session(
+            self.root / "two",
+            session_id="from-two",
+            title="Two",
+            user_text="Two",
+            assistant="Ready.",
+        )
+        sessions = load_sessions(self.root / "missing-chats", None, None, None, self.root / "two")
+        self.assertEqual([item.id for item in sessions], ["from-two"])
+
+    def test_vscode_empty_window_stays_out_of_this_workspace(self):
+        _write_vscode_session(
+            self.root / "code-user",
+            session_id="loose",
+            title="Loose",
+            user_text="Loose map",
+            assistant="Ready.",
+            empty_window=True,
+        )
+        sessions = load_sessions(self.root / "missing-chats", None, None, None, self.root / "code-user")
+        self.assertEqual(sessions[0].workspace_name, "")
+        self.assertEqual(filter_workspace(sessions, str(self.root)), [])
+
+    def test_vscode_id_stays_beside_the_agent_chat(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="shared",
+            cwd=str(self.root),
+            title="Agent",
+            updated_ms=5_000,
+            with_store=False,
+        )
+        _write_vscode_session(
+            self.root / "code-user",
+            session_id="shared",
+            title="Copilot",
+            user_text="Copilot",
+            assistant="Ready.",
+            updated_ms=1_000,
+        )
+        sessions = load_sessions(self.root / "chats", None, None, None, self.root / "code-user")
+        sources = {item.source for item in sessions if item.id == "shared"}
+        self.assertEqual(sources, {"cli", "cp-ide"})
+
+    def test_vscode_title_falls_back_to_the_user_line_then_the_id(self):
+        _write_vscode_session(
+            self.root / "code-user",
+            session_id="from-line",
+            title="   ",
+            user_text="First line\nsecond",
+            assistant="Ready.",
+        )
+        _write_vscode_session(
+            self.root / "code-user",
+            session_id="from-id",
+            title="",
+            user_text="",
+            assistant="Only the assistant.",
+        )
+        sessions = {item.id: item for item in load_sessions(self.root / "missing", None, None, None, self.root / "code-user")}
+        self.assertEqual(sessions["from-line"].display_title, "First line")
+        self.assertIsNone(sessions["from-id"].title)
+        self.assertEqual(sessions["from-id"].display_title, "from-id")
+
+    def test_vscode_time_uses_creation_when_latest_is_missing(self):
+        created = int(datetime(2026, 8, 1, 9, 5).timestamp() * 1000)
+        _write_vscode_session(
+            self.root / "code-user",
+            session_id="created-only",
+            title="Created",
+            user_text="Created",
+            assistant="Ready.",
+            updated_ms=None,
+            created_ms=created,
+        )
+        sessions = load_sessions(self.root / "missing", None, None, None, self.root / "code-user")
+        self.assertEqual(sessions[0].updated_label, format_timestamp(created))
+
+    def test_unreadable_vscode_session_is_omitted_and_named(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="cli-chat",
+            cwd=str(self.root),
+            title="Kept",
+            updated_ms=1_000,
+            with_store=False,
+        )
+        folder = self.root / "code-user" / "workspaceStorage" / "hash" / "chatSessions"
+        folder.mkdir(parents=True)
+        (folder / "broken.json").write_bytes(b"\xff")
+        warnings: list[str] = []
+        sessions = load_sessions(self.root / "chats", None, warnings, None, self.root / "code-user")
+        self.assertEqual([item.id for item in sessions], ["cli-chat"])
+        self.assertTrue(any(note.startswith("Unreadable Copilot IDE session broken:") for note in warnings))
+
+    def test_vscode_jsonl_snapshot_ignores_later_lines(self):
+        folder = self.root / "code-user" / "workspaceStorage" / "hash" / "chatSessions"
+        folder.mkdir(parents=True)
+        snapshot = {
+            "kind": 0,
+            "v": {
+                "version": 3,
+                "sessionId": "snap",
+                "customTitle": "Snapshot",
+                "creationDate": 1_000,
+                "requests": [{"message": {"text": "From the snapshot"}, "response": [{"value": "Ready."}]}],
+            },
+        }
+        mutation = {"kind": 1, "k": ["inputState", "inputText"], "v": "draft only"}
+        (folder / "snap.jsonl").write_text(
+            json.dumps(snapshot) + "\n" + json.dumps(mutation) + "\n",
+            encoding="utf-8",
+        )
+        sessions = load_sessions(self.root / "missing", None, None, None, self.root / "code-user")
+        self.assertEqual(sessions[0].display_title, "Snapshot")
+
+    def test_rider_session_joins_the_list_and_leaves_bytes(self):
+        write_chat(
+            self.root / "chats",
+            chat_id="cli-chat",
+            cwd=str(self.root),
+            title="Older chat",
+            updated_ms=1_000,
+            with_store=False,
+        )
+        launch = self.root / "SoggyMapMaker"
+        launch.mkdir()
+        moment = int(datetime(2026, 10, 24, 16, 5).timestamp() * 1000)
+        database = _write_nitrite_session(
+            self.root / "github-copilot",
+            host="rd",
+            session_id="rider-1",
+            user_text="River map",
+            assistant="The river is mapped.",
+            modified_ms=moment,
+            workspace=str(launch),
+        )
+        background = _write_nitrite_session(
+            self.root / "github-copilot",
+            host="rd",
+            session_id="bg-secret",
+            user_text="Hidden",
+            assistant="Hidden.",
+            background=True,
+        )
+        before = database.read_bytes()
+        background_before = background.read_bytes()
+        sessions = load_sessions(
+            self.root / "chats",
+            None,
+            None,
+            None,
+            self.root / "missing-vscode",
+            self.root / "github-copilot",
+        )
+        self.assertEqual(database.read_bytes(), before)
+        self.assertEqual(background.read_bytes(), background_before)
+        ids = [item.id for item in sessions]
+        self.assertEqual(ids[0], "rider-1")
+        self.assertIn("cli-chat", ids)
+        self.assertNotIn("bg-secret", ids)
+        rider = sessions[0]
+        self.assertEqual(rider.source_label, "Cp-IDE")
+        self.assertEqual(rider.workspace_name, "SoggyMapMaker")
+        self.assertEqual(rider.updated_label, format_timestamp(moment))
+        self.assertEqual(filter_workspace(sessions, str(launch)), [rider])
+
+    def test_visual_studio_session_and_missing_directory(self):
+        _write_nitrite_session(
+            self.root / "github-copilot",
+            host="vs",
+            session_id="vs-1",
+            user_text="Studio map",
+            assistant="Ready.",
+            modified_ms=3_000,
+        )
+        sessions = load_sessions(self.root / "missing", None, None, None, None, self.root / "github-copilot")
+        self.assertEqual([item.id for item in sessions], ["vs-1"])
+        self.assertEqual(sessions[0].source, "cp-ide")
+        rider_only = self.root / "rider-only"
+        _write_nitrite_session(
+            rider_only,
+            host="rd",
+            session_id="rider-only",
+            user_text="Only rider",
+            assistant="Ready.",
+        )
+        kept = load_sessions(self.root / "missing", None, None, None, None, rider_only)
+        self.assertEqual([item.id for item in kept], ["rider-only"])
+
+    def test_custom_copilot_ide_root_is_the_one_that_is_read(self):
+        _write_nitrite_session(
+            self.root / "one",
+            host="rd",
+            session_id="from-one",
+            user_text="One",
+            assistant="Ready.",
+        )
+        _write_nitrite_session(
+            self.root / "two",
+            host="rd",
+            session_id="from-two",
+            user_text="Two",
+            assistant="Ready.",
+        )
+        sessions = load_sessions(self.root / "missing", None, None, None, None, self.root / "two")
+        self.assertEqual([item.id for item in sessions], ["from-two"])
+
+    def test_rider_title_uses_the_user_turn_and_creation_time(self):
+        created = int(datetime(2026, 7, 4, 8, 15).timestamp() * 1000)
+        _write_nitrite_session(
+            self.root / "github-copilot",
+            host="rd",
+            session_id="rider-title",
+            user_text="First line\nmore",
+            assistant="",
+            created_ms=created,
+        )
+        sessions = load_sessions(self.root / "missing", None, None, None, None, self.root / "github-copilot")
+        self.assertEqual(sessions[0].display_title, "First line")
+        self.assertEqual(sessions[0].updated_label, format_timestamp(created))
+
+    def test_event_log_without_database_row_joins_the_list(self):
+        launch = self.root / "ShelfHarbor"
+        launch.mkdir()
+        session_id = "a70534c0-1f79-4ddf-bb83-9d63bf2ccb83"
+        _write_event_log(
+            self.root / "copilot",
+            session_id=session_id,
+            cwd=str(launch),
+            user_text="Please add a river.",
+            assistant="The map is ready.",
+        )
+        sessions = load_sessions(
+            self.root / "missing",
+            None,
+            None,
+            self.root / "copilot",
+            self.root / "no-vscode",
+            self.root / "no-copilot-ide",
+        )
+        self.assertEqual([item.id for item in sessions], [session_id])
+        self.assertEqual(sessions[0].source, "cp-cli")
+        self.assertEqual(sessions[0].workspace_name, "ShelfHarbor")
+        self.assertEqual(sessions[0].display_title, "Please add a river.")
+
+    def test_rider_conversation_uses_the_event_log_once(self):
+        from ai_chat_export.copilot_ide import load_copilot_ide_conversation
+
+        launch = self.root / "ShelfHarbor"
+        launch.mkdir()
+        session_id = "99a13d14-0ac4-4b80-a951-baf957339e8e"
+        _write_event_log(
+            self.root / "copilot",
+            session_id=session_id,
+            cwd=str(launch),
+            user_text="Please add a river.",
+            assistant="The map is ready.",
+        )
+        _write_live_nitrite(self.root / "github-copilot", session_id=session_id, user_text="Please add a river.")
+        sessions = load_sessions(
+            self.root / "missing",
+            None,
+            None,
+            self.root / "copilot",
+            self.root / "no-vscode",
+            self.root / "github-copilot",
+        )
+        self.assertEqual([item.id for item in sessions], [session_id])
+        self.assertEqual(sessions[0].source, "cp-ide")
+        self.assertEqual(sessions[0].workspace_name, "ShelfHarbor")
+        conversation, prompts = load_copilot_ide_conversation(sessions[0].path, session_id)
+        text = " ".join(
+            part.get("text", "")
+            for message in conversation.messages
+            for part in message.get("content") or []
+            if isinstance(part, dict)
+        )
+        self.assertIn("Please add a river.", text)
+        self.assertIn("The map is ready.", text)
+        self.assertEqual(prompts[0], "Please add a river.")
+
+    def test_vscode_agent_host_session_joins_the_list(self):
+        launch = self.root / "cursor_pretty_export"
+        launch.mkdir()
+        session_id = "a70534c0-1f79-4ddf-bb83-9d63bf2ccb83"
+        _write_event_log(
+            self.root / "copilot",
+            session_id=session_id,
+            cwd=str(launch),
+            user_text="Please add a river.",
+            assistant="The map is ready.",
+        )
+        database = self.root / "code-user" / "globalStorage" / "agent-host.db"
+        database.parent.mkdir(parents=True)
+        connection = sqlite3.connect(database)
+        connection.execute(
+            "CREATE TABLE chats_v2 (provider_data TEXT, metadata TEXT, tombstoned INTEGER)"
+        )
+        connection.execute(
+            "INSERT INTO chats_v2 (provider_data, metadata, tombstoned) VALUES (?, ?, ?)",
+            (
+                json.dumps({"sdkSessionId": session_id}),
+                json.dumps({"data": {"summary": "Repository summary"}}),
+                0,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO chats_v2 (provider_data, metadata, tombstoned) VALUES (?, ?, ?)",
+            (json.dumps({"sdkSessionId": "14d8b0da-4000-4895-b6c5-1632d39ae490"}), "{}", 1),
+        )
+        connection.commit()
+        connection.close()
+        sessions = load_sessions(
+            self.root / "missing",
+            None,
+            None,
+            self.root / "copilot",
+            self.root / "code-user",
+            self.root / "no-copilot-ide",
+        )
+        self.assertEqual([item.id for item in sessions], [session_id])
+        self.assertEqual(sessions[0].source, "cp-ide")
+        self.assertEqual(sessions[0].display_title, "Repository summary")
+        self.assertEqual(sessions[0].workspace_name, "cursor_pretty_export")
+
+
+def _write_event_log(
+    root: Path,
+    *,
+    session_id: str,
+    cwd: str,
+    user_text: str,
+    assistant: str,
+) -> Path:
+    folder = root / "session-state" / session_id
+    folder.mkdir(parents=True)
+    lines = [
+        {
+            "type": "session.start",
+            "timestamp": "2026-10-24T22:49:34.229Z",
+            "data": {"context": {"cwd": cwd}},
+        },
+        {
+            "type": "user.message",
+            "timestamp": "2026-10-24T22:49:40.000Z",
+            "data": {"content": user_text},
+        },
+        {
+            "type": "assistant.message",
+            "timestamp": "2026-10-24T23:50:45.368Z",
+            "data": {"content": assistant},
+        },
+    ]
+    (folder / "events.jsonl").write_text(
+        "\n".join(json.dumps(line) for line in lines) + "\n",
+        encoding="utf-8",
+    )
+    return folder
+
+
+def _write_live_nitrite(root: Path, *, session_id: str, user_text: str) -> Path:
+    folder = root / "rd" / "chat-agent-sessions" / "hostid"
+    folder.mkdir(parents=True, exist_ok=True)
+    chunks = [
+        b"H:2,bloc",
+        _java_string(session_id),
+        _java_string("name"),
+        _java_string("value"),
+        _java_string(user_text),
+        _java_string("source"),
+        _java_string("copilot"),
+        _java_string("copilotcli/default"),
+        _java_string("user"),
+        _java_string("person"),
+        _java_string("conversationId"),
+        _java_string(session_id),
+        _java_string("schemaVersion"),
+    ]
+    path = folder / "copilot-agent-sessions-nitrite.db"
+    path.write_bytes(b"".join(chunks))
+    return path
+
 
 def _write_copilot(
     root: Path,
@@ -461,6 +923,93 @@ def _write_copilot(
     connection.commit()
     connection.close()
     (root / "session-state" / session_id).mkdir(parents=True, exist_ok=True)
+
+
+def _write_vscode_session(
+    root: Path,
+    *,
+    session_id: str,
+    title: str,
+    user_text: str,
+    assistant: str,
+    folder_uri: str | None = None,
+    updated_ms: int | None = 2_000,
+    created_ms: int | None = 1_000,
+    empty_window: bool = False,
+) -> Path:
+    if empty_window:
+        folder = root / "globalStorage" / "emptyWindowChatSessions"
+    else:
+        folder = root / "workspaceStorage" / "hash" / "chatSessions"
+        if folder_uri is not None:
+            workspace = folder.parent / "workspace.json"
+            workspace.parent.mkdir(parents=True, exist_ok=True)
+            workspace.write_text(json.dumps({"folder": folder_uri}), encoding="utf-8")
+    folder.mkdir(parents=True, exist_ok=True)
+    document = {
+        "version": 3,
+        "sessionId": session_id,
+        "customTitle": title,
+        "creationDate": created_ms,
+        "requests": [
+            {
+                "message": {"text": user_text},
+                "response": [{"value": assistant}] if assistant else [],
+            }
+        ],
+    }
+    if updated_ms is not None:
+        document["lastMessageDate"] = updated_ms
+    path = folder / f"{session_id}.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    return path
+
+
+def _java_string(text: str) -> bytes:
+    raw = text.encode("utf-8")
+    return bytes((0x74,)) + len(raw).to_bytes(2, "big") + raw
+
+
+def _write_nitrite_session(
+    root: Path,
+    *,
+    host: str,
+    session_id: str,
+    user_text: str,
+    assistant: str,
+    modified_ms: int | None = None,
+    created_ms: int | None = None,
+    workspace: str = "",
+    background: bool = False,
+) -> Path:
+    if background:
+        folder = root / host / "bg-agent-sessions" / "hostid"
+    else:
+        folder = root / host / "chat-agent-sessions" / "hostid"
+    folder.mkdir(parents=True, exist_ok=True)
+    chunks = [b"H:2,bloc", _java_string("sessionId"), _java_string(session_id)]
+    if modified_ms is not None:
+        chunks.extend([_java_string("modifiedAt"), _java_string(str(modified_ms))])
+    if created_ms is not None:
+        chunks.extend([_java_string("createdAt"), _java_string(str(created_ms))])
+    if workspace:
+        chunks.extend([_java_string("path"), _java_string(workspace)])
+    if user_text:
+        chunks.extend(
+            [_java_string("source"), _java_string("user"), _java_string("value"), _java_string(user_text)]
+        )
+    if assistant:
+        chunks.extend(
+            [
+                _java_string("source"),
+                _java_string("copilot"),
+                _java_string("value"),
+                _java_string(assistant),
+            ]
+        )
+    path = folder / "copilot-agent-sessions-nitrite.db"
+    path.write_bytes(b"".join(chunks))
+    return path
 
 
 def _user_line(query: str) -> str:
